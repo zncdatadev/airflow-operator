@@ -32,6 +32,16 @@ const (
 	DefaultProductName     = "airflow"
 )
 
+type RoleName string
+
+const (
+	WorkersRoleName             RoleName = "workers"
+	SchedulersRoleName          RoleName = "schedulers"
+	WebserversRoleName          RoleName = "webservers"
+	CeleryExecutorsRoleName     RoleName = "celeryExecutors"
+	KubernetesExecutorsRoleName RoleName = "kubernetesExecutors"
+)
+
 type ImageSpec struct {
 	// +kubebuilder:validation:Optional
 	Custom string `json:"custom,omitempty"`
@@ -61,7 +71,7 @@ type AuthenticationSpec struct {
 	AuthenticationClass string `json:"authenticationClass,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	Oidc authenticationv1alpha1.OidcSpec `json:"oidc,omitempty"`
+	Oidc *authenticationv1alpha1.OidcSpec `json:"oidc,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=Registration;Login
@@ -103,6 +113,17 @@ type ClusterConfigSpec struct {
 	// +kubebuilder:validation:Optional
 	Authentication []AuthenticationSpec `json:"authentication,omitempty"`
 
+	// airflow credentials secret name
+	// The secret should contain the following keys:
+	// 	- adminUser.username
+	// 	- adminUser.firstusername
+	// 	- adminUser.lastname
+	// 	- adminUser.email
+	// 	- adminUser.password
+	// 	- connections.SecretKey	# Flask app secret key, eg: openssl rand -hex 30
+	// 	- connections.sqlalchemyDatabaseUri	# SQLAlchemy database URI, currently only supports postgresql in product container image
+	// 	- connections.celeryResultBackend	# Celery result backend, Only needed if using celery workers
+	// 	- connections.celeryBrokerUrl	# Celery broker URL, Only needed if using celery workers
 	// +kubebuilder:validation:Required
 	CrdentialsSecret string `json:"crdentialsSecretName"`
 
@@ -142,37 +163,41 @@ type ClusterConfigSpec struct {
 type RoleGroupSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=1
-	Replicas                             int32                           `json:"replicas"`
-	RoleConfig                           *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
-	*commonsv1alpha1.OverridesSpec       `json:",inline"`
+	Replicas                       *int32      `json:"replicas"`
+	Config                         *ConfigSpec `json:"config,omitempty"`
+	*commonsv1alpha1.OverridesSpec `json:",inline"`
+}
+
+type ConfigSpec struct {
 	*commonsv1alpha1.RoleGroupConfigSpec `json:",inline"`
 }
 
 type CeleryExecutorsSpec struct {
-	RoleGroups                           map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
-	RoleConfig                           *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
-	*commonsv1alpha1.OverridesSpec       `json:",inline"`
-	*commonsv1alpha1.RoleGroupConfigSpec `json:",inline"`
+	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
+	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
+	Config                         *ConfigSpec                     `json:"config,omitempty"`
+	*commonsv1alpha1.OverridesSpec `json:",inline"`
 }
 
 type KubernetesExecutorsSpec struct {
 	RoleConfig                           *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
+	Config                               *ConfigSpec                     `json:"config,omitempty"`
 	*commonsv1alpha1.OverridesSpec       `json:",inline"`
 	*commonsv1alpha1.RoleGroupConfigSpec `json:",inline"`
 }
 
 type SchedulersSpec struct {
-	RoleGroups                           map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
-	RoleConfig                           *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
-	*commonsv1alpha1.OverridesSpec       `json:",inline"`
-	*commonsv1alpha1.RoleGroupConfigSpec `json:",inline"`
+	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
+	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
+	Config                         *ConfigSpec                     `json:"config,omitempty"`
+	*commonsv1alpha1.OverridesSpec `json:",inline"`
 }
 
 type WebserversSpec struct {
-	RoleGroups                           map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
-	RoleConfig                           *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
-	*commonsv1alpha1.OverridesSpec       `json:",inline"`
-	*commonsv1alpha1.RoleGroupConfigSpec `json:",inline"`
+	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
+	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
+	Config                         *ConfigSpec                     `json:"config,omitempty"`
+	*commonsv1alpha1.OverridesSpec `json:",inline"`
 }
 
 // AirflowClustersSpec defines the desired state of AirflowClusters.
@@ -190,13 +215,13 @@ type AirflowClustersSpec struct {
 	CeleryExecutors *CeleryExecutorsSpec `json:"celeryExecutors,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	KubernetesExecutors *KubernetesExecutorsSpec `json:"kubernetesExecutor,omitempty"`
+	KubernetesExecutors *KubernetesExecutorsSpec `json:"kubernetesExecutors,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	Schedulers *SchedulersSpec `json:"scheduler,omitempty"`
+	Schedulers *SchedulersSpec `json:"schedulers,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	Webservers *WebserversSpec `json:"webserver,omitempty"`
+	Webservers *WebserversSpec `json:"webservers,omitempty"`
 }
 
 // AirflowClustersStatus defines the observed state of AirflowClusters.
