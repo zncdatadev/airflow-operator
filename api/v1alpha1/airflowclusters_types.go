@@ -35,11 +35,10 @@ const (
 type RoleName string
 
 const (
-	WorkersRoleName             RoleName = "workers"
 	SchedulersRoleName          RoleName = "schedulers"
 	WebserversRoleName          RoleName = "webservers"
-	CeleryExecutorsRoleName     RoleName = "celeryExecutors"
-	KubernetesExecutorsRoleName RoleName = "kubernetesExecutors"
+	CeleryExecutorsRoleName     RoleName = "celeryexecutors"
+	KubernetesExecutorsRoleName RoleName = "kubernetesexecutors"
 )
 
 type ImageSpec struct {
@@ -125,7 +124,7 @@ type ClusterConfigSpec struct {
 	// 	- connections.celeryResultBackend	# Celery result backend, Only needed if using celery workers
 	// 	- connections.celeryBrokerUrl	# Celery broker URL, Only needed if using celery workers
 	// +kubebuilder:validation:Required
-	CrdentialsSecret string `json:"crdentialsSecretName"`
+	Credentials string `json:"credentialsSecret"`
 
 	// +kubebuilder:validation:Optional
 	DagsGitSync []DagsGitSyncSpec `json:"dagsGitSync,omitempty"`

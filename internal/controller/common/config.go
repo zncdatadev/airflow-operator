@@ -70,6 +70,7 @@ func NewConfigMapBuilder(
 		),
 		ClusterConfig:   clusterConfig,
 		RoleGroupConfig: roleGroupConfig,
+		Auth:            auth,
 	}
 }
 
@@ -101,7 +102,7 @@ func (b *ConfigMapBuilder) getLogging() string {
 
 	rootLogLevel := DefaultLogLevel
 
-	if b.RoleGroupConfig.Logging != nil {
+	if b.RoleGroupConfig != nil && b.RoleGroupConfig.Logging != nil {
 		logConfig, ok := b.RoleGroupConfig.Logging.Containers[b.RoleName]
 		if ok {
 			if logConfig.File != nil {
@@ -128,13 +129,13 @@ from logging.config import dictConfig
 
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
 
-LOGDIR = ` + logDir + `
+LOGDIR = '` + logDir + `'
 
 os.makedirs(LOGDIR, exist_ok=True)
 
 LOGGING_CONFIG = deepcopy(DEFAULT_LOGGING_CONFIG)
 
-LOGGING_CONFIG.setdefault'loggers', {})
+LOGGING_CONFIG.setdefault('loggers', {})
 for logger_name, logger_config in LOGGING_CONFIG['loggers'].items():
 	logger_config['level'] = logging.NOTSET
 	# Do not change the setting of the airflow.task logger because
@@ -142,27 +143,27 @@ for logger_name, logger_config in LOGGING_CONFIG['loggers'].items():
 	if logger_name != 'airflow.task':
 		logger_config['propagate'] == True
 
-LOGGING_CONFIG.setdefault'formatters', {})
+LOGGING_CONFIG.setdefault('formatters', {})
 LOGGING_CONFIG['formatters']['json'] = {
 	'()': 'airflow.utils.log.json_formatter.JSONFormatter',
 	'json_fields': ['asctime', 'levelname', 'message', 'name']
 }
 
-LOGGING_CONFIG.setdefault'handlers', {})
+LOGGING_CONFIG.setdefault('handlers', {})
 LOGGING_CONFIG['handlers'].setdefault('console', {})
-LOGGING_CONFIG['handlers']['console']['level'] = ` + consoleLogLevel + `
+LOGGING_CONFIG['handlers']['console']['level'] = '` + consoleLogLevel + `'
 LOGGING_CONFIG['handlers']['file'] = {
 	'class': 'logging.handlers.RotatingFileHandler',
 	'formatter': 'json',
-	'level': ` + fileLogLevel + `,
-	'filename': ` + logFile + `,
-	'maxBytes': 1048576,
+	'level': '` + fileLogLevel + `',
+	'filename': '` + logFile + `',
+	'maxBytes': 10485760,
 	'backupCount': 5
 }
 
 LOGGING_CONFIG['root'] = {
-	'level': ` + rootLogLevel + `,
-	'handlers': ['console', 'file']
+	'level': '` + rootLogLevel + `',
+	'handlers': ['console', 'file'],
 	'filters': ['mask_secrets']
 }
 `
@@ -171,11 +172,6 @@ LOGGING_CONFIG['root'] = {
 }
 
 func (b *ConfigMapBuilder) getAirflowConfig() (string, error) {
-
-	authCfg, err := b.Auth.GetConfig()
-	if err != nil {
-		return "", err
-	}
 
 	cfg := `
 import os
@@ -187,9 +183,15 @@ baseDir = os.path.abspath(os.path.dirname(__file__))
 
 WTF_CSRF_ENABLED = False
 
-` + authCfg + `
 `
 
+	if b.Auth != nil {
+		authCfg, err := b.Auth.GetConfig()
+		if err != nil {
+			return "", err
+		}
+		cfg += authCfg
+	}
 	return util.IndentTab4Spaces(cfg), nil
 }
 

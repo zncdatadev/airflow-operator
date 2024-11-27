@@ -77,7 +77,12 @@ func (r *SchedulersReconciler) RegisterResourceWithRoleGroup(
 
 	var auth *common.Authentication
 	var err error
-	var executorType common.ExecutorType
+	executorType := common.CeleryExecutor
+
+	var commonsRoleGroupConfig *commonsv1alpha1.RoleGroupConfigSpec
+	if config != nil {
+		commonsRoleGroupConfig = config.RoleGroupConfigSpec
+	}
 
 	if len(r.ClusterConfig.Authentication) > 0 {
 		auth, err = common.NewAuthentication(ctx, r.Client, r.ClusterConfig.Authentication)
@@ -113,7 +118,7 @@ func (r *SchedulersReconciler) RegisterResourceWithRoleGroup(
 		replicas,
 		r.ClusterStopped(),
 		overrides,
-		config.RoleGroupConfigSpec,
+		commonsRoleGroupConfig,
 		executorType,
 		auth,
 		options,

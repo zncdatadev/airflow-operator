@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
 
 	commonsv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/commons/v1alpha1"
 	"github.com/zncdatadev/operator-go/pkg/builder"
@@ -13,16 +14,19 @@ import (
 	"github.com/zncdatadev/operator-go/pkg/util"
 	"golang.org/x/net/context"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 )
 
 var (
-	AppPath = path.Join(constants.KubedoopRoot, "airflow")
+	AppConfigPath = path.Join(constants.KubedoopRoot, "app", "config")
+	AirflowHome   = path.Join(constants.KubedoopRoot, "airflow")
 
 	KubernetesExecutorPodTemplateFileName = "airflow_executor_pod_template.yaml"
-	KubernetesExecutorPodTemplatePath     = path.Join(AppPath, "template")
+	KubernetesExecutorPodTemplatePath     = path.Join(AirflowHome, "template")
 )
 
 const (
@@ -39,7 +43,6 @@ const (
 )
 
 const BashLibs = `
-
 prepare_signal_handlers()
 {
     unset term_child_pid
@@ -153,8 +156,8 @@ func (b *StatefulSetBuilder) Build(ctx context.Context) (ctrlclient.Object, erro
 	mc := b.getMetricContainer()
 	b.AddContainer(cb.Build())
 	b.AddContainer(mc.Build())
-	b.AddVolume(
-		&corev1.Volume{
+	b.AddVolumes([]corev1.Volume{
+		{
 			Name: ConfigVolumeMountName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
@@ -163,7 +166,15 @@ func (b *StatefulSetBuilder) Build(ctx context.Context) (ctrlclient.Object, erro
 				},
 			},
 		},
-	)
+		{
+			Name: LogVolumeMountName,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{
+					SizeLimit: ptr.To(resource.MustParse("500Mi")),
+				},
+			},
+		},
+	})
 
 	obj, err := b.GetObject()
 	if err != nil {
@@ -196,25 +207,28 @@ airflow db init
 airflow db upgrade
 set +x	# disable xtrace
 airflow users create \
-	--username $` + EnvKeyAdminUserName + `
-	--firstname $` + ENVKeyAdminFirstName + `
-	--lastname $` + EnvKeyAdminLastName + `
-	--email $` + EnvKeyAdminEmail + `
-	--password $` + EnvKeyAdminPassword + `
+	--username $` + EnvKeyAdminUserName + ` \
+	--firstname $` + ENVKeyAdminFirstName + ` \
+	--lastname $` + EnvKeyAdminLastName + ` \
+	--email $` + EnvKeyAdminEmail + ` \
+	--password $` + EnvKeyAdminPassword + ` \
 	--role "Admin"
+
 set -x 	# enable xtrace
 
 airflow scheduler &
-		`
-	case airflowv1alpha1.WorkersRoleName:
+`
+	case airflowv1alpha1.CeleryExecutorsRoleName:
 		mainCommand = "airflow celery worker &"
-
 	default:
 		return "", fmt.Errorf("unsupported role %s", b.RoleName)
 	}
 
 	args := `
-cp -RL ` + constants.KubedoopConfigDirMount + ` ` + AppPath + `
+mkdir -p ` + AppConfigPath + `
+mkdir -p ` + AirflowHome + `
+cp -RL ` + constants.KubedoopConfigDirMount + `/*.py ` + AppConfigPath + `
+cp -RL ` + constants.KubedoopConfigDirMount + `/*.py ` + AirflowHome + `
 
 ` + BashLibs + `
 
@@ -225,12 +239,11 @@ rm -rf ` + builder.VectorShutdownFile + `
 wait_for_termination $!
 mkdir -p ` + builder.VectorWatcherDir + ` && touch ` + builder.VectorShutdownFile + `
 `
-
 	return util.IndentTab4Spaces(args), nil
 }
 
 func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
-	credentialsName := b.ClusterConfig.CrdentialsSecret
+	credentialsName := b.ClusterConfig.Credentials
 	if credentialsName == "" {
 		return nil, fmt.Errorf("credentials secret name in cluster config is empty")
 	}
@@ -244,10 +257,15 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 		}
 	}
 
+	pythonPaths := []string{
+		AppConfigPath,
+		DagFloder,
+	}
+
 	var envs = []corev1.EnvVar{
 		{
 			Name:  "PYTHONPATH",
-			Value: DagFloder,
+			Value: strings.Join(pythonPaths, ":"),
 		},
 		{
 			Name:  "AIRFLOW__CORE__DAGS_FOLDER",
@@ -270,7 +288,7 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 			Value: "8125",
 		},
 		{
-			Name:  "AIRFLOW__API__AUTH_BACKEND",
+			Name:  "AIRFLOW__API__AUTH_BACKENDS",
 			Value: "airflow.api.auth.backend.basic_auth",
 		},
 
@@ -278,7 +296,7 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 			Name: "AIRFLOW__WEBSERVER__SECRET_KEY",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
-					Key: "connections.secretKey",
+					Key: "appSecretKey",
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: credentialsName,
 					},
@@ -286,7 +304,7 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 			},
 		},
 		{
-			Name: "AIRFLOW__CORE__SQL_ALCHEMY_CONN",
+			Name: "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					Key: "connections.sqlalchemyDatabaseUri",
@@ -307,18 +325,32 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 		},
 		{
 			Name:  "AIRFLOW__CORE__EXECUTOR",
-			Value: string(b.Executor),
+			Value: GetExecutorName(b.Executor),
 		},
 	}
 	if b.Executor == CeleryExecutor {
 		envs = append(envs,
 			corev1.EnvVar{
-				Name:  "AIRFLOW__CELERY__RESULT_BACKEND",
-				Value: "connections.celeryResultBackend",
+				Name: "AIRFLOW__CELERY__RESULT_BACKEND",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						Key: "connections.celeryResultBackend",
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: credentialsName,
+						},
+					},
+				},
 			},
 			corev1.EnvVar{
-				Name:  "AIRFLOW__CELERY__BROKER_URL",
-				Value: "connections.celeryBrokerUrl",
+				Name: "AIRFLOW__CELERY__BROKER_URL",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						Key: "connections.celeryBrokerUrl",
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: credentialsName,
+						},
+					},
+				},
 			},
 		)
 	}
@@ -340,10 +372,10 @@ func (b *StatefulSetBuilder) setMainContainerEnv() ([]corev1.EnvVar, error) {
 	// 	)
 	// }
 
-	if b.RoleGroupName == string(airflowv1alpha1.SchedulersRoleName) {
+	if b.RoleName == string(airflowv1alpha1.SchedulersRoleName) {
 		envKeyMapping := [][]string{
 			{EnvKeyAdminUserName, "adminUser.username"},
-			{ENVKeyAdminFirstName, "adminUser.firstusername"},
+			{ENVKeyAdminFirstName, "adminUser.firstname"},
 			{EnvKeyAdminLastName, "adminUser.lastname"},
 			{EnvKeyAdminEmail, "adminUser.email"},
 			{EnvKeyAdminPassword, "adminUser.password"},
@@ -377,6 +409,10 @@ func (b *StatefulSetBuilder) getMainContainerVolumeMount() []corev1.VolumeMount 
 			Name:      ConfigVolumeMountName,
 			MountPath: constants.KubedoopConfigDirMount,
 		},
+		{
+			Name:      LogVolumeMountName,
+			MountPath: constants.KubedoopLogDir,
+		},
 	}
 }
 
@@ -400,17 +436,14 @@ func (b *StatefulSetBuilder) getMainContainer() (builder.ContainerBuilder, error
 }
 
 func (b *StatefulSetBuilder) getMetricContainer() builder.ContainerBuilder {
-	container := builder.NewContainer(b.RoleName, b.Image)
+	container := builder.NewContainer("metric", b.Image)
 	container.SetCommand([]string{"/bin/bash", "-x", "-euo", "pipefail", "-c"})
-	args := `
-
-` + BashLibs + `
+	args := BashLibs + `
 
 prepare_signal_handlers
 
-` + path.Join(constants.KubedoopRoot, "bin", "statsd_exporter") + `& 
-wait_for_termination $!
-`
+` + path.Join(constants.KubedoopRoot, "bin", "statsd-exporter") + `&
+wait_for_termination $!`
 
 	container.SetArgs([]string{util.IndentTab4Spaces(args)})
 	return container

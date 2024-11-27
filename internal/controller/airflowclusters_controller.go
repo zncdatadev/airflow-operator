@@ -19,28 +19,70 @@ package controller
 import (
 	"context"
 
+	"github.com/zncdatadev/operator-go/pkg/client"
+	"github.com/zncdatadev/operator-go/pkg/reconciler"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 )
 
+var logger = ctrl.Log.WithName("controller")
+
 // AirflowClustersReconciler reconciles a AirflowClusters object
 type AirflowClustersReconciler struct {
-	client.Client
+	ctrlclient.Client
 	Scheme *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=airflow.kubedoop.dev,resources=airflowclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=airflow.kubedoop.dev,resources=airflowclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=airflow.kubedoop.dev,resources=airflowclusters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=authentication.kubedoop.dev,resources=authenticationclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *AirflowClustersReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
 
-	return ctrl.Result{}, nil
+	logger.Info("Reconciling AirflowCluster")
+
+	instance := &airflowv1alpha1.AirflowClusters{}
+	err := r.Get(ctx, req.NamespacedName, instance)
+	if err != nil {
+		if ctrlclient.IgnoreNotFound(err) == nil {
+			logger.V(1).Info("AirflowCluster resource not found. Ignoring since object must be deleted.")
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	resourceClient := &client.Client{
+		Client:         r.Client,
+		OwnerReference: instance,
+	}
+
+	clusterInfo := reconciler.ClusterInfo{
+		GVK: &metav1.GroupVersionKind{
+			Group:   airflowv1alpha1.GroupVersion.Group,
+			Version: airflowv1alpha1.GroupVersion.Version,
+			Kind:    "AirflowClusters",
+		},
+		ClusterName: instance.Name,
+	}
+
+	reconciler := NewClusterReconciler(resourceClient, clusterInfo, &instance.Spec)
+
+	if err := reconciler.RegisterResource(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return reconciler.Run(ctx)
 }
 
 // SetupWithManager sets up the controller with the Manager.

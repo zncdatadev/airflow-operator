@@ -77,7 +77,12 @@ func (r *WebserversReconciler) RegisterResourceWithRoleGroup(
 
 	var auth *common.Authentication
 	var err error
-	var executorType common.ExecutorType
+	executorType := common.CeleryExecutor
+
+	var commonsRoleGroupConfig *commonsv1alpha1.RoleGroupConfigSpec
+	if config != nil {
+		commonsRoleGroupConfig = config.RoleGroupConfigSpec
+	}
 	ports := []corev1.ContainerPort{
 		{
 			Name:          "http",
@@ -120,7 +125,7 @@ func (r *WebserversReconciler) RegisterResourceWithRoleGroup(
 		replicas,
 		r.ClusterStopped(),
 		overrides,
-		config.RoleGroupConfigSpec,
+		commonsRoleGroupConfig,
 		executorType,
 		auth,
 		options,
