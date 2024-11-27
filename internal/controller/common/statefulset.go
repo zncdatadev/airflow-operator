@@ -150,7 +150,9 @@ func (b *StatefulSetBuilder) Build(ctx context.Context) (ctrlclient.Object, erro
 	if err != nil {
 		return nil, err
 	}
+	mc := b.getMetricContainer()
 	b.AddContainer(cb.Build())
+	b.AddContainer(mc.Build())
 	b.AddVolume(
 		&corev1.Volume{
 			Name: ConfigVolumeMountName,
@@ -392,15 +394,12 @@ func (b *StatefulSetBuilder) getMainContainer() (builder.ContainerBuilder, error
 	}
 	container.AddEnvVars(envs)
 
+	container.AddVolumeMounts(b.getMainContainerVolumeMount())
+
 	return container, nil
 }
 
-// setupVector will inject the vector container into the statefulset if vector is enabled
-func (b *StatefulSetBuilder) setupVector() error {
-	panic("implement me")
-}
-
-func (b *StatefulSetBuilder) getMetricContainer() (builder.ContainerBuilder, error) {
+func (b *StatefulSetBuilder) getMetricContainer() builder.ContainerBuilder {
 	container := builder.NewContainer(b.RoleName, b.Image)
 	container.SetCommand([]string{"/bin/bash", "-x", "-euo", "pipefail", "-c"})
 	args := `
@@ -414,10 +413,5 @@ wait_for_termination $!
 `
 
 	container.SetArgs([]string{util.IndentTab4Spaces(args)})
-	return container, nil
-}
-
-// getGitSyncContainer returns a container if git sync is enabled
-func (b *StatefulSetBuilder) getGitSyncContainer() (builder.ContainerBuilder, error) {
-	panic("implement me")
+	return container
 }

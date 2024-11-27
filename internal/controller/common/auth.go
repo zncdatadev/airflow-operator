@@ -320,22 +320,25 @@ func (a *ldapAuthenticator) GetVolumes() []corev1.Volume {
 	}
 	secretClass := a.provider.BindCredentials.SecretClass
 
-	scopes := []string{}
+	svcScope := make([]string, 0)
+	podScope := false
+	nodeScope := false
 	if a.provider.BindCredentials.Scope != nil {
 		if a.provider.BindCredentials.Scope.Pod {
-			scopes = append(scopes, string(constants.PodScope))
+			podScope = true
 		}
 		if a.provider.BindCredentials.Scope.Node {
-			scopes = append(scopes, string(constants.NodeScope))
+			nodeScope = true
 		}
 		if a.provider.BindCredentials.Scope.Services != nil {
 			for _, s := range a.provider.BindCredentials.Scope.Services {
-				scopes = append(scopes, string(constants.ServiceScope)+"="+s)
+				svcScope = append(svcScope, string(constants.ServiceScope)+"="+s)
 			}
 		}
 	}
 
 	b := builder.NewSecretOperatorVolume(a.getVolumeName(), secretClass)
+	b.SetScope(podScope, nodeScope, strings.Join(svcScope, ","), "")
 	return []corev1.Volume{*b.Builde()}
 }
 

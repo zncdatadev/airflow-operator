@@ -15,6 +15,10 @@ import (
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 )
 
+const (
+	DefaultLogLevel = "INFO"
+)
+
 var _ builder.ConfigBuilder = &ConfigMapBuilder{}
 
 func NewConfigReconciler(
@@ -76,10 +80,7 @@ func (b *ConfigMapBuilder) Build(ctx context.Context) (ctrlclient.Object, error)
 		return nil, err
 	}
 
-	loggingConfig, err := b.getLogging()
-	if err != nil {
-		return nil, err
-	}
+	loggingConfig := b.getLogging()
 
 	vectorConfig, err := b.getVector(ctx)
 	if err != nil {
@@ -93,12 +94,12 @@ func (b *ConfigMapBuilder) Build(ctx context.Context) (ctrlclient.Object, error)
 	return b.GetObject(), nil
 }
 
-func (b *ConfigMapBuilder) getLogging() (string, error) {
-	fileLogLevel := "INFO"
-	consoleLogLevel := "INFO"
+func (b *ConfigMapBuilder) getLogging() string {
+	fileLogLevel := DefaultLogLevel
+	consoleLogLevel := DefaultLogLevel
 	logFile := path.Join(constants.KubedoopLogDir, b.RoleName, "airflow.log.json")
 
-	rootLogLevel := "INFO"
+	rootLogLevel := DefaultLogLevel
 
 	if b.RoleGroupConfig.Logging != nil {
 		logConfig, ok := b.RoleGroupConfig.Logging.Containers[b.RoleName]
@@ -166,7 +167,7 @@ LOGGING_CONFIG['root'] = {
 }
 `
 
-	return util.IndentTab4Spaces(cfg), nil
+	return util.IndentTab4Spaces(cfg)
 }
 
 func (b *ConfigMapBuilder) getAirflowConfig() (string, error) {
