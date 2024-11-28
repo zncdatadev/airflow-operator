@@ -1,0 +1,9 @@
+apiVersion: airflow.kubedoop.dev/v1alpha1
+kind: AirflowCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: airflow-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: airflowcluster-sample
+spec:
+  # TODO(user): Add fields here

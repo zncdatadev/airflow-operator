@@ -1,0 +1,17 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Configuration
+metadata:
+  name: custom-config
+spec:
+  # namespace: chainsaw
+  timeouts:
+    apply: 120s
+    assert: 300s
+    cleanup: 120s
+    delete: 120s
+    error: 180s
+    exec: 120s
+  # skipDelete: true
+  failFast: true
+  parallel: 1
+  forceTerminationGracePeriod: 10s
