@@ -31,8 +31,8 @@ import (
 
 var logger = ctrl.Log.WithName("controller")
 
-// AirflowClustersReconciler reconciles a AirflowClusters object
-type AirflowClustersReconciler struct {
+// AirflowClusterReconciler reconciles a AirflowCluster object
+type AirflowClusterReconciler struct {
 	ctrlclient.Client
 	Scheme *runtime.Scheme
 }
@@ -48,11 +48,11 @@ type AirflowClustersReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
-func (r *AirflowClustersReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AirflowClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	logger.Info("Reconciling AirflowCluster")
 
-	instance := &airflowv1alpha1.AirflowClusters{}
+	instance := &airflowv1alpha1.AirflowCluster{}
 	err := r.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if ctrlclient.IgnoreNotFound(err) == nil {
@@ -71,7 +71,7 @@ func (r *AirflowClustersReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		GVK: &metav1.GroupVersionKind{
 			Group:   airflowv1alpha1.GroupVersion.Group,
 			Version: airflowv1alpha1.GroupVersion.Version,
-			Kind:    "AirflowClusters",
+			Kind:    "AirflowCluster",
 		},
 		ClusterName: instance.Name,
 	}
@@ -86,9 +86,9 @@ func (r *AirflowClustersReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *AirflowClustersReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *AirflowClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&airflowv1alpha1.AirflowClusters{}).
-		Named("airflowclusters").
+		For(&airflowv1alpha1.AirflowCluster{}).
+		Named("airflowcluster").
 		Complete(r)
 }

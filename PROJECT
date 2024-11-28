@@ -14,7 +14,7 @@ resources:
   controller: true
   domain: kubedoop.dev
   group: airflow
-  kind: AirflowClusters
+  kind: AirflowCluster
   path: github.com/zncdatadev/airflow-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

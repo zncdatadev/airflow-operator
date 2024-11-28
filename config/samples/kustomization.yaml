@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- airflow_v1alpha1_airflowclusters.yaml
+- airflow_v1alpha1_airflowcluster.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

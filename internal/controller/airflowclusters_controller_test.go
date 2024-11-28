@@ -31,7 +31,7 @@ import (
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 )
 
-var _ = Describe("AirflowClusters Controller", func() {
+var _ = Describe("AirflowCluster Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -41,18 +41,18 @@ var _ = Describe("AirflowClusters Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		airflowclusters := &airflowv1alpha1.AirflowClusters{}
+		airflowcluster := &airflowv1alpha1.AirflowCluster{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind AirflowClusters")
-			err := k8sClient.Get(ctx, typeNamespacedName, airflowclusters)
+			By("creating the custom resource for the Kind AirflowCluster")
+			err := k8sClient.Get(ctx, typeNamespacedName, airflowcluster)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &airflowv1alpha1.AirflowClusters{
+				resource := &airflowv1alpha1.AirflowCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					Spec: airflowv1alpha1.AirflowClustersSpec{
+					Spec: airflowv1alpha1.AirflowClusterSpec{
 						ClusterConfig: &airflowv1alpha1.ClusterConfigSpec{
 							Credentials: "test-credentials",
 						},
@@ -85,16 +85,16 @@ var _ = Describe("AirflowClusters Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &airflowv1alpha1.AirflowClusters{}
+			resource := &airflowv1alpha1.AirflowCluster{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance AirflowClusters")
+			By("Cleanup the specific resource instance AirflowCluster")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &AirflowClustersReconciler{
+			controllerReconciler := &AirflowClusterReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}

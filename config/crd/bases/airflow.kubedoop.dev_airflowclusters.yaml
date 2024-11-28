@@ -8,16 +8,16 @@ metadata:
 spec:
   group: airflow.kubedoop.dev
   names:
-    kind: AirflowClusters
-    listKind: AirflowClustersList
+    kind: AirflowCluster
+    listKind: AirflowClusterList
     plural: airflowclusters
-    singular: airflowclusters
+    singular: airflowcluster
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: AirflowClusters is the Schema for the airflowclusters API.
+        description: AirflowCluster is the Schema for the airflowclusters API.
         properties:
           apiVersion:
             description: |-
@@ -37,7 +37,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AirflowClustersSpec defines the desired state of AirflowClusters.
+            description: AirflowClusterSpec defines the desired state of AirflowCluster.
             properties:
               celeryExecutors:
                 properties:
@@ -1499,7 +1499,7 @@ spec:
                 type: object
             type: object
           status:
-            description: AirflowClustersStatus defines the observed state of AirflowClusters.
+            description: AirflowClusterStatus defines the observed state of AirflowCluster.
             type: object
         type: object
     served: true

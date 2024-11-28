@@ -199,8 +199,8 @@ type WebserversSpec struct {
 	*commonsv1alpha1.OverridesSpec `json:",inline"`
 }
 
-// AirflowClustersSpec defines the desired state of AirflowClusters.
-type AirflowClustersSpec struct {
+// AirflowClusterSpec defines the desired state of AirflowCluster.
+type AirflowClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	Image *ImageSpec `json:"image,omitempty"`
 
@@ -223,31 +223,31 @@ type AirflowClustersSpec struct {
 	Webservers *WebserversSpec `json:"webservers,omitempty"`
 }
 
-// AirflowClustersStatus defines the observed state of AirflowClusters.
-type AirflowClustersStatus struct {
+// AirflowClusterStatus defines the observed state of AirflowCluster.
+type AirflowClusterStatus struct {
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// AirflowClusters is the Schema for the airflowclusters API.
-type AirflowClusters struct {
+// AirflowCluster is the Schema for the airflowclusters API.
+type AirflowCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AirflowClustersSpec   `json:"spec,omitempty"`
-	Status AirflowClustersStatus `json:"status,omitempty"`
+	Spec   AirflowClusterSpec   `json:"spec,omitempty"`
+	Status AirflowClusterStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// AirflowClustersList contains a list of AirflowClusters.
-type AirflowClustersList struct {
+// AirflowClusterList contains a list of AirflowCluster.
+type AirflowClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []AirflowClusters `json:"items"`
+	Items           []AirflowCluster `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&AirflowClusters{}, &AirflowClustersList{})
+	SchemeBuilder.Register(&AirflowCluster{}, &AirflowClusterList{})
 }

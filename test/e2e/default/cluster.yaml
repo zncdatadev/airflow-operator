@@ -1,10 +1,10 @@
 apiVersion: airflow.kubedoop.dev/v1alpha1
-kind: AirflowClusters
+kind: AirflowCluster
 metadata:
   labels:
     app.kubernetes.io/name: airflow-operator
     app.kubernetes.io/managed-by: kustomize
-  name: airflowclusters
+  name: airflowcluster
 spec:
   clusterConfig:
     credentialsSecret: credentials

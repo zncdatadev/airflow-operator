@@ -14,14 +14,14 @@ import (
 var _ reconciler.Reconciler = &ClusterReconciler{}
 
 type ClusterReconciler struct {
-	reconciler.BaseCluster[*airflowv1alpha1.AirflowClustersSpec]
+	reconciler.BaseCluster[*airflowv1alpha1.AirflowClusterSpec]
 	ClusterConfig *airflowv1alpha1.ClusterConfigSpec
 }
 
 func NewClusterReconciler(
 	client *client.Client,
 	clusterInfo reconciler.ClusterInfo,
-	spec *airflowv1alpha1.AirflowClustersSpec,
+	spec *airflowv1alpha1.AirflowClusterSpec,
 ) *ClusterReconciler {
 	return &ClusterReconciler{
 		BaseCluster: *reconciler.NewBaseCluster(
