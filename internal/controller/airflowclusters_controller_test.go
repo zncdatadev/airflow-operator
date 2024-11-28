@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,7 +52,32 @@ var _ = Describe("AirflowClusters Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: airflowv1alpha1.AirflowClustersSpec{
+						ClusterConfig: &airflowv1alpha1.ClusterConfigSpec{
+							Credentials: "test-credentials",
+						},
+						Webservers: &airflowv1alpha1.WebserversSpec{
+							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
+								"default": {
+									Replicas: ptr.To[int32](1),
+								},
+							},
+						},
+						CeleryExecutors: &airflowv1alpha1.CeleryExecutorsSpec{
+							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
+								"default": {
+									Replicas: ptr.To[int32](1),
+								},
+							},
+						},
+						Schedulers: &airflowv1alpha1.SchedulersSpec{
+							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
+								"default": {
+									Replicas: ptr.To[int32](1),
+								},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
