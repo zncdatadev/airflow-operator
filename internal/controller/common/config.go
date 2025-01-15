@@ -30,7 +30,7 @@ func NewConfigReconciler(
 	options ...builder.Option,
 ) *reconciler.SimpleResourceReconciler[builder.ConfigBuilder] {
 
-	supersetConfigSecretBuilder := NewConfigMapBuilder(
+	airflowConfigSecretBuilder := NewConfigMapBuilder(
 		client,
 		roleGroupInfo.GetFullName(),
 		clusterConfig,
@@ -40,7 +40,7 @@ func NewConfigReconciler(
 	)
 	return reconciler.NewSimpleResourceReconciler[builder.ConfigBuilder](
 		client,
-		supersetConfigSecretBuilder,
+		airflowConfigSecretBuilder,
 	)
 }
 
