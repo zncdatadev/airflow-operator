@@ -182,13 +182,9 @@ func (b *StatefulSetBuilder) Build(ctx context.Context) (ctrlclient.Object, erro
 	}
 
 	if b.ClusterConfig != nil && b.ClusterConfig.VectorAggregatorConfigMapName != "" {
-		builder.NewVectorDecorator(
-			obj,
-			b.GetImage(),
-			LogVolumeMountName,
-			"vector",
-			b.Name,
-		)
+		vector := builder.NewVector(b.Name, LogVolumeMountName, b.GetImage())
+		b.AddContainer(vector.GetContainer())
+		b.AddVolumes(b.GetVolumes())
 	}
 
 	return obj, nil

@@ -338,7 +338,11 @@ func (a *ldapAuthenticator) GetVolumes() []corev1.Volume {
 	}
 
 	b := builder.NewSecretOperatorVolume(a.getVolumeName(), secretClass)
-	b.SetScope(podScope, nodeScope, strings.Join(svcScope, ","), "")
+	b.SetScope(&builder.SecretVolumeScope{
+		Pod:     podScope,
+		Node:    nodeScope,
+		Service: svcScope,
+	})
 	return []corev1.Volume{*b.Builde()}
 }
 
