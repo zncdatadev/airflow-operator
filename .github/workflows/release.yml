@@ -78,23 +78,20 @@ jobs:
 
       - name: Create KinD clustet pur
         env:
-          KINDTEST_K8S_VERSION: ${{ matrix.k8s-version}}
+          KIND_K8S_VERSION: ${{ matrix.k8s-version}}
           KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
-          KIND_KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
         run: make kind-create
 
       - name: Chainsaw test setup
         env:
-          KINDTEST_K8S_VERSION: ${{ matrix.k8s-version }}
+          KIND_K8S_VERSION: ${{ matrix.k8s-version }}
           KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
-          KIND_KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
         run: make chainsaw-setup
 
       - name: Test with Chainsaw
         env:
-          KINDTEST_K8S_VERSION: ${{ matrix.k8s-version }}
+          KIND_K8S_VERSION: ${{ matrix.k8s-version }}
           KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
-          KIND_KUBECONFIG: kind-kubeconfig-${{ matrix.k8s-version }}
         run: make chainsaw-test
 
 
@@ -127,6 +124,5 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
 
       - name: Build and push operator
-
         run: |
           make docker-buildx
