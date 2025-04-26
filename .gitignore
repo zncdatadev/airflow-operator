@@ -28,3 +28,4 @@ go.work
 
 kind-kubeconfig*
 **debug*
+docker-digests.json
