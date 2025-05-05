@@ -7,7 +7,7 @@ require (
 	github.com/onsi/gomega v1.36.3
 	github.com/zncdatadev/operator-go v0.12.3
 	golang.org/x/net v0.38.0
-	k8s.io/api v0.32.3
+	k8s.io/api v0.33.0
 	k8s.io/apimachinery v0.33.0
 	k8s.io/client-go v0.32.3
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
