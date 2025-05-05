@@ -26,10 +26,9 @@ import (
 )
 
 const (
-	DefaultRepository      = "quay.io/zncdatadev"
-	DefaultProductVersion  = "2.10.2"
-	DefaultKubedoopVersion = "0.0.0-dev"
-	DefaultProductName     = "airflow"
+	DefaultRepository     = "quay.io/zncdatadev"
+	DefaultProductVersion = "2.10.2"
+	DefaultProductName    = "airflow"
 )
 
 type RoleName string
@@ -202,6 +201,7 @@ type WebserversSpec struct {
 // AirflowClusterSpec defines the desired state of AirflowCluster.
 type AirflowClusterSpec struct {
 	// +kubebuilder:validation:Optional
+	// +default:value={"repo": "quay.io/zncdatadev", "pullPolicy": "IfNotPresent"}
 	Image *ImageSpec `json:"image,omitempty"`
 
 	// +kubebuilder:validation:Optional
