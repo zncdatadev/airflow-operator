@@ -127,7 +127,7 @@ jobs:
           make docker-buildx
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.4.0
+        uses: sigstore/cosign-installer@v3.9.0
 
       - name: Sign image with cosign
         run: |
