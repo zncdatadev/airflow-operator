@@ -29,3 +29,7 @@ go.work
 kind-kubeconfig*
 **debug*
 docker-digests.json
+
+# helm charts
+# helm package directory
+target
