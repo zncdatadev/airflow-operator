@@ -28,7 +28,7 @@ jobs:
 
 
   test-e2e:
-    name: Run on Ubuntu
+    name: test-e2e
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -40,7 +40,9 @@ jobs:
           go-version-file: go.mod
 
       - name: Create kind cluster
-        run: make kind-create
+        run: |
+          make kind
+          ./bin/kind create cluster
 
       - name: Running Test e2e
         run: |
@@ -48,7 +50,7 @@ jobs:
           make test-e2e
 
       - name: Delete kind cluster
-        run: make kind-delete
+        run: ./bin/kind delete cluster
 
 
   chainsaw-test:
