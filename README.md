@@ -26,7 +26,7 @@ helm install secret-operator oci://quay.io/kubedoopcharts/secret-operator
 ### Add airflow-operator
 
 ```bash
-helm install hdfs-operator oci://quay.io/kubedoopcharts/hdfs-operator
+helm install airflow-operator oci://quay.io/kubedoopcharts/airflow-operator
 ```
 
 ### Deploy Airflow cluster
