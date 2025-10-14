@@ -1,7 +1,7 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: postgres
+  name: airflow-postgres
 status:
   availableReplicas: 1
   readyReplicas: 1
@@ -10,6 +10,6 @@ status:
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: airflow-postgres
 status:
   loadBalancer: {}

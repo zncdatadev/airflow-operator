@@ -15,21 +15,18 @@ spec:
         app: redis
     spec:
       containers:
-        - name: redis
-          image: bitnami/redis:7.2.4
-          ports:
-            - containerPort: 6379
-              name: tcp
-          env:
-          - name: ALLOW_EMPTY_PASSWORD
-            value: "yes"
-          resources:
-            requests:
-              memory: "64Mi"
-              cpu: "250m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
+      - name: redis
+        image: quay.io/fedora/redis-7
+        ports:
+        - containerPort: 6379
+          name: tcp
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
 ---
 apiVersion: v1
 kind: Service
