@@ -8,7 +8,6 @@ import (
 	"github.com/zncdatadev/operator-go/pkg/client"
 	"github.com/zncdatadev/operator-go/pkg/reconciler"
 	"github.com/zncdatadev/operator-go/pkg/util"
-	corev1 "k8s.io/api/core/v1"
 
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 	common "github.com/zncdatadev/airflow-operator/internal/controller/common"
@@ -83,13 +82,6 @@ func (r *WebserversReconciler) RegisterResourceWithRoleGroup(
 	if config != nil {
 		commonsRoleGroupConfig = config.RoleGroupConfigSpec
 	}
-	ports := []corev1.ContainerPort{
-		{
-			Name:          "http",
-			ContainerPort: 8080,
-			Protocol:      corev1.ProtocolTCP,
-		},
-	}
 
 	if len(r.ClusterConfig.Authentication) > 0 {
 		auth, err = common.NewAuthentication(ctx, r.Client, r.ClusterConfig.Authentication)
@@ -140,5 +132,7 @@ func (r *WebserversReconciler) RegisterResourceWithRoleGroup(
 		ports,
 	)
 
-	return []reconciler.Reconciler{configmapReconciler, deploymentReconciler, svc}, nil
+	metricsSvc := common.GetServiceReconciler(r, info, ports)
+
+	return []reconciler.Reconciler{configmapReconciler, deploymentReconciler, svc, metricsSvc}, nil
 }
