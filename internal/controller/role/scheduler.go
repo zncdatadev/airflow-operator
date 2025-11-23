@@ -127,5 +127,7 @@ func (r *SchedulersReconciler) RegisterResourceWithRoleGroup(
 		return nil, err
 	}
 
-	return []reconciler.Reconciler{configmapReconciler, deploymentReconciler}, nil
+	metricsSvc := common.GetServiceReconciler(r, info, ports)
+
+	return []reconciler.Reconciler{configmapReconciler, deploymentReconciler, metricsSvc}, nil
 }
