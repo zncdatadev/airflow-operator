@@ -9,5 +9,10 @@ var (
 			ContainerPort: 8080,
 			Protocol:      corev1.ProtocolTCP,
 		},
+		{
+			Name:          "metrics",
+			ContainerPort: 9012, // statsd exporter port
+			Protocol:      corev1.ProtocolTCP,
+		},
 	}
 )
