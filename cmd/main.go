@@ -81,7 +81,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		importedVersion := version.NewAppInfo("zookeeper-operator").String()
+		importedVersion := version.NewAppInfo("airflow-operator").String()
 		fmt.Println(importedVersion)
 		os.Exit(0)
 	}
