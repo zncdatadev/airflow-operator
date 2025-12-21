@@ -1,3 +1,4 @@
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -7,16 +8,14 @@
 bin/*
 Dockerfile.cross
 
-# Test binary, built with `go test -c`
+# Test binary, build with `go test -c`
 *.test
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-# Go workspace file
-go.work
-
 # Kubernetes Generated files - skip generated files, except for vendored files
+
 !vendor/**/zz_generated.*
 
 # editor and IDE paraphernalia
@@ -26,9 +25,23 @@ go.work
 *.swo
 *~
 
-kind-kubeconfig*
-**debug*
+# Ignore kubeconfig files
+.kubeconfig*
+
+# Ignore docker digest files
 docker-digests.json
+
+*-local.yaml
+*-local.*
+
+# test
+ginkgo.report
+cover.out
+*__debug*
+**/coverage
+
+# ai code local
+.codiumai.toml
 
 # helm charts
 # helm package directory
