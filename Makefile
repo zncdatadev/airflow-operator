@@ -28,6 +28,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .PHONY: all
 all: build
 
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
@@ -201,16 +202,22 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-HELM = $(LOCALBIN)/helm
-KIND = $(LOCALBIN)/kind
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.17.1
-ENVTEST_VERSION ?= release-0.20
-GOLANGCI_LINT_VERSION ?= v2.0.2
-HELM_VERSION ?= v3.17.0
-KIND_VERSION ?= v0.26.0
+KUSTOMIZE_VERSION ?= v5.7.1
+CONTROLLER_TOOLS_VERSION ?= v0.19.0
+
+#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
+ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_VERSION manually (controller-runtime replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/release-\1.\2/')
+
+#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
+ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
+  [ -n "$$v" ] || { echo "Set ENVTEST_K8S_VERSION manually (k8s.io/api replace has no tag)" >&2; exit 1; }; \
+  printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
+
+GOLANGCI_LINT_VERSION ?= v2.5.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -222,6 +229,14 @@ controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessar
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
+.PHONY: setup-envtest
+setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
+	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
+	@"$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path || { \
+		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
+		exit 1; \
+	}
+
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
@@ -232,118 +247,112 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
-.PHONY: helm
-helm: $(HELM) ## Download helm locally if necessary.
-$(HELM): $(LOCALBIN)
-	$(call go-install-tool,$(HELM),helm.sh/helm/v3/cmd/helm,$(HELM_VERSION))
-
-.PHONY: kind
-kind: $(KIND) ## Download kind locally if necessary.
-$(KIND): $(LOCALBIN)
-	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
-
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f "$(1)-$(3)" ] || { \
+@[ -f "$(1)-$(3)" ] && [ "$$(readlink -- "$(1)" 2>/dev/null)" = "$(1)-$(3)" ] || { \
 set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
-rm -f $(1) || true ;\
-GOBIN=$(LOCALBIN) go install $${package} ;\
-mv $(1) $(1)-$(3) ;\
+rm -f "$(1)" ;\
+GOBIN="$(LOCALBIN)" go install $${package} ;\
+mv "$(LOCALBIN)/$$(basename "$(1)")" "$(1)-$(3)" ;\
 } ;\
-ln -sf $(1)-$(3) $(1)
+ln -sf "$$(realpath "$(1)-$(3)")" "$(1)"
 endef
 
-## helm deps
-HELM_DEPENDS ?= commons-operator listener-operator secret-operator
-TEST_NAMESPACE = kubedoop-operators
+define gomodver
+$(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
+endef
 
-.PHONY: helm-install-depends
-helm-install-depends: helm ## Install the helm chart depends.
-ifneq ($(strip $(HELM_DEPENDS)),)
-	for dep in $(HELM_DEPENDS); do \
-		$(HELM) upgrade --install --create-namespace --namespace $(TEST_NAMESPACE) --wait $$dep oci://quay.io/kubedoopcharts/$$dep --version $(VERSION); \
-	done
-endif
 
-## helm uninstall depends
-.PHONY: helm-uninstall-depends
-helm-uninstall-depends: helm ## Uninstall the helm chart depends.
-ifneq ($(strip $(HELM_DEPENDS)),)
-	for dep in $(HELM_DEPENDS); do \
-		$(HELM) uninstall --namespace $(TEST_NAMESPACE) $$dep; \
-	done
-endif
+##@ Helm Charts
 
-##@ Chainsaw-E2E
+OCI_REGISTRY ?= oci://quay.io/kubedoopcharts
+HELM ?= helm
 
-# Tool Versions
-# KIND_K8S_VERSION refers to the version of k8s to be used by kind.
+.PHONY: helm-crd-sync ## Sync CRDs to helm chart for the operator.
+helm-crd-sync: manifests kustomize ## Sync CRDs to helm chart for the operator
+	"$(KUSTOMIZE)" build config/crd > deploy/helm/$(PROJECT_NAME)/crds/crds.yaml
+
+.PHONY: helm-chart-package ## Package helm chart for the operator.
+helm-chart-package: ## Package helm chart for the operator.
+	mkdir -p target/charts
+	rm -rf target/charts/*.tgz
+	"$(HELM)" package deploy/helm/$(PROJECT_NAME) --version $(VERSION) --app-version $(VERSION) --destination target/charts
+
+.PHONY: helm-chart-publish ## Publish helm chart for the operator.
+helm-chart-publish: helm-chart-package ## Publish helm chart for the operator.
+	"$(HELM)" push target/charts/$(PROJECT_NAME)-$(VERSION).tgz $(OCI_REGISTRY)
+
+
+##@ Chainsaw E2E
+
+CHAINSAW ?= $(LOCALBIN)/chainsaw
+CHAINSAW_VERSION ?= v0.2.13
+CHAINSAW_CLUSTER ?= chainsaw-${PROJECT_NAME}
+CHAINSAW_KUBECONFIG ?= .kubeconfig
+# KIND_K8S_VERSION refers to the version of Kubernetes to be used by kind node image.
 # The version only effects e2e tests.
-# When run `make kind-create`, the version of k8s will be used to create the kind cluster,
-# and the target kubeconfig file will be named as `./kind-kubeconfig-$(KIND_K8S_VERSION)`.
-# So if you want to use the target cluster, to run `export KUBECONFIG=./kind-kubeconfig-$(KIND_K8S_VERSION)`.
+# When run `kind create --image kindest/node:v${KIND_K8S_VERSION}`, the node image version of k8s will be used to create the kind cluster,
+# and the target kubeconfig file will be named as `$(CHAINSAW_KUBECONFIG)` (default: `.kubeconfig`).
+# So if you want to use the target cluster, run `export KUBECONFIG=$(CHAINSAW_KUBECONFIG)` (default: `.kubeconfig`).
 KIND_K8S_VERSION ?= 1.26.15
-CHAINSAW_VERSION ?= v0.2.12
-
+# The kind node image can found in https://github.com/kubernetes-sigs/kind/releases.
 KIND_IMAGE ?= kindest/node:v${KIND_K8S_VERSION}
-KIND_KUBECONFIG ?= ./kind-kubeconfig-$(KIND_K8S_VERSION)
-KIND_CLUSTER_NAME ?= ${PROJECT_NAME}-$(KIND_K8S_VERSION)
+# Define operator dependencies to be installed before running chainsaw tests.
+# It is a list of Helm chart names separated by spaces.
+OPERATOR_DEPENDS ?= commons-operator listener-operator secret-operator
 
-CHAINSAW = $(LOCALBIN)/chainsaw
-
-# Create a kind cluster
-.PHONY: kind-create
-kind-create: kind ## Create a kind cluster.
-	$(KIND) create cluster --image $(KIND_IMAGE) --name $(KIND_CLUSTER_NAME) --kubeconfig $(KIND_KUBECONFIG) --wait 120s
-
-.PHONY: kind-delete
-kind-delete: kind ## Delete a kind cluster.
-	$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
-
-# chainsaw
-
-# Use `grep 0.2.6 > /dev/null` instead of `grep -q 0.2.6`. It will not be able to determine the version number,
-# although the execution in the shell is normal, but in the makefile does fail to understand the mechanism in the makefile
-# The operation ends by using `touch` to change the time of the file so that its timestamp is further back than the directory,
-# so that no subsequent logic is performed after the `chainsaw` check is successful in relying on the `$(CHAINSAW)` target.
 .PHONY: chainsaw
 chainsaw: $(CHAINSAW) ## Download chainsaw locally if necessary.
 $(CHAINSAW): $(LOCALBIN)
-	@{ \
-	set -xe ;\
-	if test -x $(LOCALBIN)/chainsaw && ! $(LOCALBIN)/chainsaw version | grep $(CHAINSAW_VERSION:v%=%) > /dev/null; then \
-		echo "$(LOCALBIN)/chainsaw version is not expected $(CHAINSAW_VERSION). Removing it before installing."; \
-		rm -rf $(LOCALBIN)/chainsaw; \
-	fi; \
-	if test ! -s $(LOCALBIN)/chainsaw; then \
-		mkdir -p $(dir $(CHAINSAW)) ;\
-		TMP=$(shell mktemp -d) ;\
-		OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-		curl -sSL https://github.com/kyverno/chainsaw/releases/download/$(CHAINSAW_VERSION)/chainsaw_$${OS}_$${ARCH}.tar.gz | tar -xz -C $$TMP ;\
-		mv $$TMP/chainsaw $(CHAINSAW) ;\
-		rm -rf $$TMP ;\
-		chmod +x $(CHAINSAW) ;\
-		touch $(CHAINSAW) ;\
-	fi; \
+	$(call go-install-tool,$(CHAINSAW),github.com/kyverno/chainsaw,$(CHAINSAW_VERSION))
+
+.PHONY: setup-chainsaw-cluster
+setup-chainsaw-cluster: ## Set up a Kind cluster for e2e tests if it does not exist
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
 	}
+	@case "$$($(KIND) get clusters)" in \
+		*"$(CHAINSAW_CLUSTER)"*) \
+			echo "Kind cluster '$(CHAINSAW_CLUSTER)' already exists. Skipping creation." ;; \
+		*) \
+			echo "Creating Kind cluster '$(CHAINSAW_CLUSTER)'..."; \
+			$(KIND) create cluster --name $(CHAINSAW_CLUSTER) --image $(KIND_IMAGE) --kubeconfig $(CHAINSAW_KUBECONFIG) ;; \
+	esac
 
-.PHONY: chainsaw-setup
-chainsaw-setup: ## Run the chainsaw setup
-	make docker-build
-	$(KIND) --name $(KIND_CLUSTER_NAME) load docker-image $(IMG)
-	KUBECONFIG=$(KIND_KUBECONFIG) make helm-install-depends
-	KUBECONFIG=$(KIND_KUBECONFIG) make deploy
+	@if [ -n "$(strip $(OPERATOR_DEPENDS))" ]; then \
+		echo "Installing operator dependencies..."; \
+		for dep in $(OPERATOR_DEPENDS); do \
+			echo "Installing $$dep..."; \
+			"$(HELM)" upgrade --install --create-namespace --namespace kubedoop-operators --kubeconfig $(CHAINSAW_KUBECONFIG) --wait $$dep oci://quay.io/kubedoopcharts/$$dep --version $(VERSION); \
+		done; \
+	fi
 
-.PHONY: chainsaw-test
-chainsaw-test: chainsaw ## Run the chainsaw test
-	KUBECONFIG=$(KIND_KUBECONFIG) $(CHAINSAW) test --cluster cluster-1=$(KIND_KUBECONFIG) --test-dir ./test/e2e/
+.PHONY: setup-chainsaw-e2e
+setup-chainsaw-e2e: chainsaw docker-build ## Run the chainsaw setup
+	"$(KIND)" --name $(CHAINSAW_CLUSTER) load docker-image "$(IMG)"
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(MAKE) deploy
 
-.PHONY: chainsaw-cleanup
-chainsaw-cleanup: ## Run the chainsaw cleanup
-	KUBECONFIG=$(KIND_KUBECONFIG) make helm-uninstall-depends
-	KUBECONFIG=$(KIND_KUBECONFIG) make undeploy
+
+.PHONY: chainsaw-e2e
+chainsaw-e2e: ## Run the chainsaw e2e tests
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/
+
+.PHONY: cleanup-chainsaw-e2e
+cleanup-chainsaw-e2e: ## Run the chainsaw cleanup
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(MAKE) undeploy
+	@if [ -n "$(strip $(OPERATOR_DEPENDS))" ]; then \
+		for dep in $(OPERATOR_DEPENDS); do \
+			"$(HELM)" uninstall --namespace kubedoop-operators $$dep; \
+		done; \
+	fi
+
+.PHONY: cleanup-chainsaw-cluster
+cleanup-chainsaw-cluster: ## Tear down the Kind cluster used for chainsaw e2e tests
+	$(KIND) delete cluster --name $(CHAINSAW_CLUSTER)
+	rm -f $(CHAINSAW_KUBECONFIG)
