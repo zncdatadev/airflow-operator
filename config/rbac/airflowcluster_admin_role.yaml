@@ -11,7 +11,7 @@ metadata:
   labels:
     app.kubernetes.io/name: airflow-operator
     app.kubernetes.io/managed-by: kustomize
-  name: airflowcluster-editor-role
+  name: airflowcluster-admin-role
 rules:
 - apiGroups:
   - airflow.kubedoop.dev
