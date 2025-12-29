@@ -31,7 +31,7 @@ metadata:
   name: airflowcluster-observability-webservers-default
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "9012"
+    prometheus.io/port: "9102"
     prometheus.io/path: "/metrics"
     prometheus.io/scheme: "http"
 ---
@@ -41,7 +41,7 @@ metadata:
   name: airflowcluster-observability-schedulers-default
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "9012"
+    prometheus.io/port: "9102"
     prometheus.io/path: "/metrics"
     prometheus.io/scheme: "http"
 ---
@@ -51,6 +51,6 @@ metadata:
   name: airflowcluster-observability-celeryexecutors-default
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "9012"
+    prometheus.io/port: "9102"
     prometheus.io/path: "/metrics"
     prometheus.io/scheme: "http"

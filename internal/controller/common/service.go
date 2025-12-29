@@ -22,6 +22,10 @@ func GetServiceReconciler(roleReconciler reconciler.RoleReconciler, rgInfo recon
 		annotations := rgInfo.GetAnnotations()
 		maps.Copy(annotations, getPrometheusAnnotations(int32(metricsPort)))
 
+		labels := make(map[string]string)
+		maps.Copy(labels, rgInfo.GetLabels())
+		labels["prometheus.io/scrape"] = "true"
+
 		svcReconciler := reconciler.NewServiceReconciler(
 			roleReconciler.GetClient(),
 			rgInfo.GetFullName(),
@@ -33,6 +37,7 @@ func GetServiceReconciler(roleReconciler reconciler.RoleReconciler, rgInfo recon
 			},
 			func(o *builder.ServiceBuilderOptions) {
 				o.Annotations = annotations
+				o.Labels = labels
 			},
 		)
 		return svcReconciler
