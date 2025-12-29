@@ -1,0 +1,22 @@
+apiVersion: airflow.kubedoop.dev/v1alpha1
+kind: AirflowCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: airflow-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: airflowcluster-observability
+spec:
+  clusterConfig:
+    credentialsSecret: airflow-credentials
+  webservers:
+    roleGroups:
+      default:
+        replicas: 1
+  schedulers:
+    roleGroups:
+      default:
+        replicas: 1
+  celeryExecutors:
+    roleGroups:
+      default:
+        replicas: 1

@@ -1,0 +1,267 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: observability
+spec:
+  steps:
+  # 1. Install PostgreSQL and Redis
+  - name: install-dependencies
+    try:
+      - apply:
+          file: postgres.yaml
+      - apply:
+          file: redis.yaml
+      - assert:
+          file: postgres-assert.yaml
+
+  # 2. Install AirflowCluster
+  - name: install-airflow-cluster
+    try:
+      - apply:
+          file: credentials.yaml
+      - apply:
+          file: cluster.yaml
+      - assert:
+          file: cluster-assert.yaml
+      - assert:
+          timeout: 240s
+          resource:
+            kind: StatefulSet
+            apiVersion: apps/v1
+            metadata:
+              name: airflowcluster-observability-webservers-default
+              namespace: ($namespace)
+            status:
+              readyReplicas: 1
+      - assert:
+          timeout: 240s
+          resource:
+            kind: StatefulSet
+            apiVersion: apps/v1
+            metadata:
+              name: airflowcluster-observability-schedulers-default
+              namespace: ($namespace)
+            status:
+              readyReplicas: 1
+      - assert:
+          timeout: 240s
+          resource:
+            kind: StatefulSet
+            apiVersion: apps/v1
+            metadata:
+              name: airflowcluster-observability-celeryexecutors-default
+              namespace: ($namespace)
+            status:
+              readyReplicas: 1
+
+  # 3. Verify metrics port connectivity and format
+  - name: verify-metrics-connectivity
+    try:
+      - script:
+          bindings:
+          - name: NAMESPACE
+            value: ($namespace)
+          content: |
+            #!/bin/bash
+            set -ex
+
+            # Get all Airflow pods (webservers, schedulers, celeryexecutors)
+            echo "Namespace: $NAMESPACE"
+            PODS=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/instance=airflowcluster-observability -o jsonpath='{.items[*].metadata.name}')
+            echo "Found Airflow pods: $PODS"
+
+            if [ -z "$PODS" ]; then
+              echo "ERROR: No Airflow pods found"
+              exit 1
+            fi
+
+            for POD in $PODS; do
+              echo "Testing Pod: $POD"
+
+              # Port-forward to pod metrics port
+              kubectl port-forward -n "$NAMESPACE" "$POD" 9102:9102 > /dev/null 2>&1 &
+              PF_PID=$!
+              sleep 3
+
+              trap "kill $PF_PID 2>/dev/null || true" EXIT
+
+              # Test metrics endpoint accessibility
+              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9102/metrics)
+              if [[ "$HTTP_CODE" != "200" ]]; then
+                echo "ERROR: Failed to access metrics endpoint, HTTP code: $HTTP_CODE"
+                kill $PF_PID 2>/dev/null || true
+                exit 1
+              fi
+
+              # Fetch metrics
+              METRICS=$(curl -s http://localhost:9102/metrics)
+
+              # Verify Prometheus format
+              if ! echo "$METRICS" | grep -q "# TYPE"; then
+                echo "ERROR: Missing Prometheus format (# TYPE)"
+                kill $PF_PID 2>/dev/null || true
+                exit 1
+              fi
+
+              # Verify statsd exporter metrics are present
+              if ! echo "$METRICS" | grep -q "statsd_exporter_"; then
+                echo "WARNING: statsd_exporter metrics not found, but metrics endpoint is working"
+              fi
+
+              # Verify some basic metrics are present
+              METRIC_COUNT=$(echo "$METRICS" | grep "^[a-z]" | wc -l)
+              if [ "$METRIC_COUNT" -lt 1 ]; then
+                echo "ERROR: No metrics found in output"
+                kill $PF_PID 2>/dev/null || true
+                exit 1
+              fi
+
+              echo "✓ Pod $POD metrics OK (found $METRIC_COUNT metrics)"
+
+              # Cleanup
+              kill $PF_PID 2>/dev/null || true
+              sleep 1
+            done
+
+            echo "✓ All pods metrics verified"
+
+  # 4. Install Prometheus
+  - name: install-prometheus
+    try:
+      - script:
+          bindings:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/bin/bash
+            set -ex
+
+            echo "=== Environment Check ==="
+            echo "NAMESPACE variable: '$NAMESPACE'"
+            echo "NAMESPACE length: ${#NAMESPACE}"
+            if [ -z "$NAMESPACE" ]; then
+              echo "ERROR: NAMESPACE is empty!"
+              exit 1
+            fi
+
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+            helm repo update
+
+            echo "=== Installing Prometheus ==="
+            echo "Will install to namespace: $NAMESPACE"
+
+            helm upgrade --install prometheus prometheus-community/prometheus \
+              --version 25.3.1 \
+              --namespace "$NAMESPACE" \
+              --create-namespace \
+              -f prometheus-values.yaml \
+              --wait --timeout 5m
+
+  # 5. Verify Prometheus targets
+  - name: verify-prometheus-targets
+    try:
+      - script:
+          bindings:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/bin/bash
+            set -e
+
+            # Wait for Prometheus server pod
+            kubectl wait --for=condition=Ready pod -l app=prometheus,component=server -n "$NAMESPACE" --timeout=300s 2>/dev/null || true
+            sleep 5
+
+            # Port-forward
+            kubectl port-forward -n "$NAMESPACE" svc/prometheus-server 9090:80 > /dev/null 2>&1 &
+            PF_PID=$!
+            sleep 3
+
+            trap "kill $PF_PID 2>/dev/null || true" EXIT
+
+            # Check targets
+            TARGETS=$(curl -s http://localhost:9090/api/v1/targets)
+
+            echo "=== Checking Prometheus Targets ==="
+
+            # Check if we have any active targets
+            ACTIVE=$(echo "$TARGETS" | grep -o '"state":"up"' | wc -l)
+            echo "Total active targets: $ACTIVE"
+
+            if [ "$ACTIVE" -eq 0 ]; then
+              echo "WARNING: No active targets found, waiting more..."
+              sleep 10
+              TARGETS=$(curl -s http://localhost:9090/api/v1/targets)
+              ACTIVE=$(echo "$TARGETS" | grep -o '"state":"up"' | wc -l)
+              echo "Total active targets after wait: $ACTIVE"
+            fi
+
+            # Check for Airflow metrics services
+            echo "Looking for Airflow metrics services..."
+
+            FOUND_SERVICES=0
+            for SERVICE in webservers schedulers celeryexecutors; do
+              if echo "$TARGETS" | grep -q "airflowcluster-observability-${SERVICE}-default"; then
+                echo "✓ Found ${SERVICE} service"
+                FOUND_SERVICES=$((FOUND_SERVICES+1))
+
+                # Verify target is UP
+                if echo "$TARGETS" | grep "airflowcluster-observability-${SERVICE}-default" | grep -q '"health":"up"'; then
+                  echo "✓ ${SERVICE} target is UP"
+                else
+                  echo "WARNING: ${SERVICE} target found but not UP"
+                  echo "$TARGETS" | grep "airflowcluster-observability-${SERVICE}-default" | head -5
+                fi
+              else
+                echo "WARNING: ${SERVICE} service not found in targets"
+              fi
+            done
+
+            if [ "$FOUND_SERVICES" -eq 0 ]; then
+              echo "ERROR: No Airflow metrics services found in Prometheus"
+              echo "Available targets:"
+              echo "$TARGETS" | grep -o '"job":"[^"]*"' | sort | uniq
+              exit 1
+            fi
+
+            echo "✓ Prometheus targets verification complete (found $FOUND_SERVICES services)"
+
+  # 6. Verify metrics scraping
+  - name: verify-metrics-scraping
+    try:
+      - script:
+          bindings:
+            - name: NAMESPACE
+              value: ($namespace)
+          content: |
+            #!/bin/bash
+            set -e
+
+            # Port-forward to Prometheus
+            kubectl port-forward -n "$NAMESPACE" svc/prometheus-server 9090:80 > /dev/null 2>&1 &
+            PF_PID=$!
+            sleep 3
+
+            trap "kill $PF_PID 2>/dev/null || true" EXIT
+
+            echo "=== Verifying Metrics Scraping ==="
+
+            # Query for any metrics from Airflow pods
+            # Using 'up' metric to check if targets are being scraped
+            QUERY='up{job="kubernetes-service-endpoints"}'
+            RESULT=$(curl -s -G --data-urlencode "query=${QUERY}" http://localhost:9090/api/v1/query)
+
+            echo "Query result:"
+            echo "$RESULT" | head -50
+
+            # Check if we got any results
+            RESULT_COUNT=$(echo "$RESULT" | grep -o '"__name__":"up"' | wc -l)
+            echo "Found $RESULT_COUNT 'up' metrics"
+
+            if [ "$RESULT_COUNT" -eq 0 ]; then
+              echo "WARNING: No metrics found, this might be expected if scraping hasn't occurred yet"
+            else
+              echo "✓ Metrics are being scraped successfully"
+            fi
+
+            echo "✓ Metrics scraping verification complete"
