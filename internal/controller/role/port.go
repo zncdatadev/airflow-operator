@@ -11,7 +11,7 @@ var (
 		},
 		{
 			Name:          "metrics",
-			ContainerPort: 9012, // statsd exporter port
+			ContainerPort: 9102, // statsd exporter port
 			Protocol:      corev1.ProtocolTCP,
 		},
 	}
