@@ -132,6 +132,7 @@ func NewAuthentication(
 	}, nil
 }
 
+// getTotalAuthenticatorCount returns the total number of authenticators across all types
 func (a *Authentication) getTotalAuthenticatorCount() int {
 	total := 0
 	for _, typedAuthenticator := range a.authenticators {
