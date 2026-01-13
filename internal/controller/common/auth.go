@@ -132,14 +132,17 @@ func NewAuthentication(
 	}, nil
 }
 
-func (a *Authentication) GetEnvVars() []corev1.EnvVar {
-	// Preallocate with estimated capacity
-	totalAuthenticators := 0
+func (a *Authentication) getTotalAuthenticatorCount() int {
+	total := 0
 	for _, typedAuthenticator := range a.authenticators {
-		totalAuthenticators += len(typedAuthenticator)
+		total += len(typedAuthenticator)
 	}
-	// Assume average of 3 env vars per authenticator
-	envVars := make([]corev1.EnvVar, 0, totalAuthenticators*3)
+	return total
+}
+
+func (a *Authentication) GetEnvVars() []corev1.EnvVar {
+	// Preallocate with estimated capacity (approximately 3 env vars per authenticator)
+	envVars := make([]corev1.EnvVar, 0, a.getTotalAuthenticatorCount()*3)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			envVars = append(envVars, authenticator.GetEnvVars()...)
@@ -149,13 +152,8 @@ func (a *Authentication) GetEnvVars() []corev1.EnvVar {
 }
 
 func (a *Authentication) GetVolumes() []corev1.Volume {
-	// Preallocate with estimated capacity
-	totalAuthenticators := 0
-	for _, typedAuthenticator := range a.authenticators {
-		totalAuthenticators += len(typedAuthenticator)
-	}
-	// Assume average of 2 volumes per authenticator
-	volumes := make([]corev1.Volume, 0, totalAuthenticators*2)
+	// Preallocate with estimated capacity (approximately 2 volumes per authenticator)
+	volumes := make([]corev1.Volume, 0, a.getTotalAuthenticatorCount()*2)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			volumes = append(volumes, authenticator.GetVolumes()...)
@@ -165,13 +163,8 @@ func (a *Authentication) GetVolumes() []corev1.Volume {
 }
 
 func (a *Authentication) GetVolumeMounts() []corev1.VolumeMount {
-	// Preallocate with estimated capacity
-	totalAuthenticators := 0
-	for _, typedAuthenticator := range a.authenticators {
-		totalAuthenticators += len(typedAuthenticator)
-	}
-	// Assume average of 2 volume mounts per authenticator
-	mounts := make([]corev1.VolumeMount, 0, totalAuthenticators*2)
+	// Preallocate with estimated capacity (approximately 2 volume mounts per authenticator)
+	mounts := make([]corev1.VolumeMount, 0, a.getTotalAuthenticatorCount()*2)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			mounts = append(mounts, authenticator.GetVolumeMounts()...)
