@@ -132,8 +132,18 @@ func NewAuthentication(
 	}, nil
 }
 
+// getTotalAuthenticatorCount returns the total number of authenticators across all types
+func (a *Authentication) getTotalAuthenticatorCount() int {
+	total := 0
+	for _, typedAuthenticator := range a.authenticators {
+		total += len(typedAuthenticator)
+	}
+	return total
+}
+
 func (a *Authentication) GetEnvVars() []corev1.EnvVar {
-	envVars := make([]corev1.EnvVar, 0)
+	// Preallocate with estimated capacity (approximately 3 env vars per authenticator)
+	envVars := make([]corev1.EnvVar, 0, a.getTotalAuthenticatorCount()*3)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			envVars = append(envVars, authenticator.GetEnvVars()...)
@@ -143,7 +153,8 @@ func (a *Authentication) GetEnvVars() []corev1.EnvVar {
 }
 
 func (a *Authentication) GetVolumes() []corev1.Volume {
-	var volumes []corev1.Volume
+	// Preallocate with estimated capacity (approximately 2 volumes per authenticator)
+	volumes := make([]corev1.Volume, 0, a.getTotalAuthenticatorCount()*2)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			volumes = append(volumes, authenticator.GetVolumes()...)
@@ -153,7 +164,8 @@ func (a *Authentication) GetVolumes() []corev1.Volume {
 }
 
 func (a *Authentication) GetVolumeMounts() []corev1.VolumeMount {
-	var mounts []corev1.VolumeMount
+	// Preallocate with estimated capacity (approximately 2 volume mounts per authenticator)
+	mounts := make([]corev1.VolumeMount, 0, a.getTotalAuthenticatorCount()*2)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
 			mounts = append(mounts, authenticator.GetVolumeMounts()...)
