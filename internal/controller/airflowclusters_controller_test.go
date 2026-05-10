@@ -36,6 +36,7 @@ var _ = Describe("AirflowCluster Controller", func() {
 		const (
 			resourceName     = "test-resource"
 			defaultNamespace = "default"
+			defaultRoleGroup = "default"
 		)
 
 		ctx := context.Background()
@@ -61,21 +62,21 @@ var _ = Describe("AirflowCluster Controller", func() {
 						},
 						Webservers: &airflowv1alpha1.WebserversSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								defaultNamespace: {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
 						},
 						CeleryExecutors: &airflowv1alpha1.CeleryExecutorsSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								defaultNamespace: {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
 						},
 						Schedulers: &airflowv1alpha1.SchedulersSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								defaultNamespace: {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
