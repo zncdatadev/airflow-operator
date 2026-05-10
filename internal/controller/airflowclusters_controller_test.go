@@ -33,13 +33,17 @@ import (
 
 var _ = Describe("AirflowCluster Controller", func() {
 	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+		const (
+			resourceName     = "test-resource"
+			defaultNamespace = "default"
+			defaultRoleGroup = "default"
+		)
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: defaultNamespace, // TODO(user):Modify as needed
 		}
 		airflowcluster := &airflowv1alpha1.AirflowCluster{}
 
@@ -50,7 +54,7 @@ var _ = Describe("AirflowCluster Controller", func() {
 				resource := &airflowv1alpha1.AirflowCluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: defaultNamespace,
 					},
 					Spec: airflowv1alpha1.AirflowClusterSpec{
 						ClusterConfig: &airflowv1alpha1.ClusterConfigSpec{
@@ -58,21 +62,21 @@ var _ = Describe("AirflowCluster Controller", func() {
 						},
 						Webservers: &airflowv1alpha1.WebserversSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								"default": {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
 						},
 						CeleryExecutors: &airflowv1alpha1.CeleryExecutorsSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								"default": {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
 						},
 						Schedulers: &airflowv1alpha1.SchedulersSpec{
 							RoleGroups: map[string]airflowv1alpha1.RoleGroupSpec{
-								"default": {
+								defaultRoleGroup: {
 									Replicas: ptr.To[int32](1),
 								},
 							},
