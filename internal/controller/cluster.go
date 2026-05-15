@@ -36,10 +36,15 @@ func NewClusterReconciler(
 }
 
 func (r *ClusterReconciler) GetImage() *util.Image {
+	productVersion := airflowv1alpha1.DefaultProductVersion
+	if r.Spec.Image != nil && r.Spec.Image.ProductVersion != "" {
+		productVersion = r.Spec.Image.ProductVersion
+	}
+
 	image := util.NewImage(
 		airflowv1alpha1.DefaultProductName,
 		airflowversion.BuildVersion,
-		airflowv1alpha1.DefaultProductVersion,
+		productVersion,
 		func(options *util.ImageOptions) {
 			options.Custom = r.Spec.Image.Custom
 			options.Repo = r.Spec.Image.Repo
