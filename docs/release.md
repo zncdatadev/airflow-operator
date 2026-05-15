@@ -6,7 +6,8 @@ This document describes the standard release process for airflow-operator.
 
 The release process follows a branch-based workflow:
 
-- **Main branch** (`main`): The default development branch where new features and bug fixes are merged.
+- **Main branch** (`main`): The default development branch
+  where new features and bug fixes are merged.
 - **Release branch** (`release-x.y`): A long-lived branch for a minor version series
   (e.g., `release-0.4`). Created from `main`, only accepts bug fixes and
   dependency upgrades, no new features. All release tags are created from this
@@ -109,10 +110,12 @@ runs the following jobs:
 - **Markdown Lint** — Lints markdown files under `docs/` and `README.*.md`
 - **Golang Lint** — Runs golangci-lint
 - **Golang Test** — Runs unit tests
-- **Chainsaw Test** — Runs Chainsaw E2E tests across multiple Kubernetes and Airflow versions
+- **Chainsaw Test** — Runs Chainsaw E2E tests across multiple
+  Kubernetes and Airflow versions
 - **CRD Sync Check** — Verifies CRDs are in sync with manifests
 - **Chart Linter (Artifact Hub)** — Validates Helm chart metadata
-- **Chart Lint Helm** — Validates the Helm chart with `ct lint` and installs it with `ct install`
+- **Chart Lint Helm** — Validates the Helm chart with `ct lint`
+  and installs it with `ct install`
 - **Chart E2E** — Runs Chainsaw E2E tests against a Helm-installed release
 - **Release Image** — Builds and pushes multi-arch Docker image using the root
   Dockerfile to `quay.io/zncdatadev/airflow-operator:<version>`, and signs the
