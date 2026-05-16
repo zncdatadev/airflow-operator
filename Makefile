@@ -277,8 +277,12 @@ HELM ?= helm
 helm-crd-sync: manifests kustomize ## Sync CRDs to helm chart for the operator
 	"$(KUSTOMIZE)" build config/crd > deploy/helm/$(PROJECT_NAME)/crds/crds.yaml
 
+.PHONY: chart ## Generate helm chart for the operator.
+chart: manifests kustomize ## Generate helm chart for the operator.
+	"$(KUSTOMIZE)" build config/crd > deploy/helm/$(PROJECT_NAME)/crds/crds.yaml
+
 .PHONY: helm-chart-package ## Package helm chart for the operator.
-helm-chart-package: ## Package helm chart for the operator.
+helm-chart-package: chart ## Package helm chart for the operator.
 	mkdir -p target/charts
 	rm -rf target/charts/*.tgz
 	"$(HELM)" package deploy/helm/$(PROJECT_NAME) --version $(VERSION) --app-version $(VERSION) --destination target/charts
@@ -356,3 +360,11 @@ cleanup-chainsaw-e2e: ## Run the chainsaw cleanup
 cleanup-chainsaw-cluster: ## Tear down the Kind cluster used for chainsaw e2e tests
 	$(KIND) delete cluster --name $(CHAINSAW_CLUSTER)
 	rm -f $(CHAINSAW_KUBECONFIG)
+
+.PHONY: chart-e2e
+chart-e2e: setup-chainsaw-cluster chainsaw docker-build helm-chart-package ## Run e2e tests with Helm chart deployment
+	"$(KIND)" --name $(CHAINSAW_CLUSTER) load docker-image "$(IMG)"
+	"$(HELM)" upgrade --install --create-namespace --namespace airflow-operator \
+		--kubeconfig $(CHAINSAW_KUBECONFIG) --wait $(PROJECT_NAME) \
+		target/charts/$(PROJECT_NAME)-$(VERSION).tgz
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/
