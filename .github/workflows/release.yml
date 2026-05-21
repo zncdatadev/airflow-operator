@@ -211,16 +211,16 @@ jobs:
           # Exclude -dev pre-release tags only when looking for the previous tag,
           # not when matching the current tag itself
           CURRENT_TAG="${{ github.ref_name }}"
-          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -A1 "^${CURRENT_TAG}$" | tail -n1 | grep -v '\\-dev$')
+          PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -A1 "^${CURRENT_TAG}$" | tail -n1 | grep -v '\-dev$')
 
           # If the -dev tag itself was the only match (no previous stable tag found),
           # try again excluding -dev to find the actual previous stable release
-          if [[ -z "$PREVIOUS_TAG" ]]; then
-            PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -v '\\-dev$' | grep -A1 "^${CURRENT_TAG}$" | tail -n1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git tag --sort=-v:refname | grep -v '\-dev$' | grep -A1 "^${CURRENT_TAG}$" | tail -n1)
           fi
 
           # First release detection
-          if [[ "$PREVIOUS_TAG" == "$CURRENT_TAG" || -z "$PREVIOUS_TAG" ]]; then
+          if [ "$PREVIOUS_TAG" = "$CURRENT_TAG" ] || [ -z "$PREVIOUS_TAG" ]; then
             echo "First release detected - marking all charts as changed"
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "target_branch=main" >> "$GITHUB_OUTPUT"
@@ -239,12 +239,12 @@ jobs:
           PRIORITY_BRANCH=""
           # 1. Find release branches (sorted lexicographically)
           RELEASE_BRANCH=$(echo "$PREVIOUS_BRANCHES" | grep -E 'origin/release' | sort | head -n1)
-          if [[ -n "$RELEASE_BRANCH" ]]; then
+          if [ -n "$RELEASE_BRANCH" ]; then
             PRIORITY_BRANCH="$RELEASE_BRANCH"
           else
             # 2. Fallback to main
             MAIN_BRANCH=$(echo "$PREVIOUS_BRANCHES" | grep -E '^origin/main$')
-            if [[ -n "$MAIN_BRANCH" ]]; then
+            if [ -n "$MAIN_BRANCH" ]; then
               PRIORITY_BRANCH="$MAIN_BRANCH"
             else
               # 3. Fallback to the first other branch
@@ -271,7 +271,7 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "$changed" ]]; then
+          if [ -n "$changed" ]; then
             echo "Changed charts detected: $changed"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
