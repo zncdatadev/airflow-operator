@@ -499,7 +499,7 @@ spec:
                     default: 0.0.0-dev
                     type: string
                   productVersion:
-                    default: 2.10.2
+                    default: 2.10.5
                     type: string
                   pullPolicy:
                     default: IfNotPresent

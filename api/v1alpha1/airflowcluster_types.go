@@ -27,7 +27,7 @@ import (
 
 const (
 	DefaultRepository     = "quay.io/zncdatadev"
-	DefaultProductVersion = "2.10.2"
+	DefaultProductVersion = "2.10.5"
 	DefaultProductName    = "airflow"
 )
 
@@ -53,7 +53,7 @@ type ImageSpec struct {
 	KubedoopVersion string `json:"kubedoopVersion,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default="2.10.2"
+	// +kubebuilder:default="2.10.5"
 	ProductVersion string `json:"productVersion,omitempty"`
 
 	// +kubebuilder:validation:Optional
