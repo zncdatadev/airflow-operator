@@ -1,19 +1,17 @@
-package commons
+package controller
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"text/template"
 
 	authv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/authentication/v1alpha1"
-	"github.com/zncdatadev/operator-go/pkg/builder"
-	"github.com/zncdatadev/operator-go/pkg/client"
-	"github.com/zncdatadev/operator-go/pkg/config"
-	"github.com/zncdatadev/operator-go/pkg/config/properties"
-	"github.com/zncdatadev/operator-go/pkg/constants"
+	"github.com/zncdatadev/operator-go/pkg/constant"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,9 +26,7 @@ const (
 	AuthenticatorTypeOIDC AuthenticatorType = "oidc"
 )
 
-var (
-	AirflowSupportAuthTypes = []AuthenticatorType{AuthenticatorTypeLDAP, AuthenticatorTypeOIDC}
-)
+var AirflowSupportAuthTypes = []AuthenticatorType{AuthenticatorTypeLDAP, AuthenticatorTypeOIDC}
 
 const (
 	DefaultLDAPFieldEmail     = "email"
@@ -47,21 +43,19 @@ const (
 
 var authLogger = ctrl.Log.WithName("authenticator")
 
+// Authenticator renders one AuthenticationClass provider into Airflow terms: env vars for the
+// webserver container and template values for webserver_config.py. The pre-framework code also
+// built an LDAP SecretClass volume here that was never attached to any pod; that dead path is
+// gone, so the interface covers only what reaches a rendered resource.
 type Authenticator interface {
 	GetEnvVars() []corev1.EnvVar
-	GetVolumes() []corev1.Volume
-	GetVolumeMounts() []corev1.VolumeMount
-	GetConfig() *properties.Properties
-	GetCommands() []string
+	GetConfig() map[string]string
 }
 
-func GetAuthProvider(ctx context.Context, client *client.Client, authclass string) (*authv1alpha1.AuthenticationProvider, error) {
+func GetAuthProvider(ctx context.Context, c ctrlclient.Client, authclass string) (*authv1alpha1.AuthenticationProvider, error) {
 	obj := &authv1alpha1.AuthenticationClass{}
-	if err := client.Get(ctx, ctrlclient.ObjectKey{Name: authclass}, obj); err != nil {
-		if ctrlclient.IgnoreNotFound(err) != nil {
-			return nil, err
-		}
-		authLogger.Info("AuthenticationClass not found", "name", authclass)
+	if err := c.Get(ctx, ctrlclient.ObjectKey{Name: authclass}, obj); err != nil {
+		return nil, fmt.Errorf("failed to get AuthenticationClass %s: %w", authclass, err)
 	}
 	return obj.Spec.AuthenticationProvider, nil
 }
@@ -84,7 +78,7 @@ func containsAuthType(authTypes []AuthenticatorType, authType AuthenticatorType)
 
 func NewAuthentication(
 	ctx context.Context,
-	client *client.Client,
+	c ctrlclient.Client,
 	auths []airflowv1alpha1.AuthenticationSpec,
 ) (*Authentication, error) {
 	authenticators := make(map[AuthenticatorType][]Authenticator)
@@ -92,7 +86,7 @@ func NewAuthentication(
 	var userRegistration *bool
 	var userRegistrationRole *string
 	for _, auth := range auths {
-		provider, err := GetAuthProvider(ctx, client, auth.AuthenticationClass)
+		provider, err := GetAuthProvider(ctx, c, auth.AuthenticationClass)
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +126,6 @@ func NewAuthentication(
 	}, nil
 }
 
-// getTotalAuthenticatorCount returns the total number of authenticators across all types
 func (a *Authentication) getTotalAuthenticatorCount() int {
 	total := 0
 	for _, typedAuthenticator := range a.authenticators {
@@ -142,7 +135,6 @@ func (a *Authentication) getTotalAuthenticatorCount() int {
 }
 
 func (a *Authentication) GetEnvVars() []corev1.EnvVar {
-	// Preallocate with estimated capacity (approximately 3 env vars per authenticator)
 	envVars := make([]corev1.EnvVar, 0, a.getTotalAuthenticatorCount()*3)
 	for _, typedAuthenticator := range a.authenticators {
 		for _, authenticator := range typedAuthenticator {
@@ -152,41 +144,33 @@ func (a *Authentication) GetEnvVars() []corev1.EnvVar {
 	return envVars
 }
 
-func (a *Authentication) GetVolumes() []corev1.Volume {
-	// Preallocate with estimated capacity (approximately 2 volumes per authenticator)
-	volumes := make([]corev1.Volume, 0, a.getTotalAuthenticatorCount()*2)
-	for _, typedAuthenticator := range a.authenticators {
-		for _, authenticator := range typedAuthenticator {
-			volumes = append(volumes, authenticator.GetVolumes()...)
-		}
-	}
-	return volumes
-}
-
-func (a *Authentication) GetVolumeMounts() []corev1.VolumeMount {
-	// Preallocate with estimated capacity (approximately 2 volume mounts per authenticator)
-	mounts := make([]corev1.VolumeMount, 0, a.getTotalAuthenticatorCount()*2)
-	for _, typedAuthenticator := range a.authenticators {
-		for _, authenticator := range typedAuthenticator {
-			mounts = append(mounts, authenticator.GetVolumeMounts()...)
-		}
-	}
-	return mounts
-}
-
 func (a *Authentication) getAuthDBConfig() string {
 	return "AUTH_TYPE = 'AUTH_DB'"
 }
 
-func (a *Authentication) getOidcConfig() (string, error) {
+// templateData collects the shared FAB settings. Nil pointers render as their zero value, which
+// makes the `{{- if }}` guards in the templates below skip the unset lines.
+func (a *Authentication) templateData() map[string]interface{} {
 	data := make(map[string]interface{})
+	if a.syncRolesAt != nil {
+		data["auth_roles_sync_at_login"] = *a.syncRolesAt
+	}
+	if a.userRegistration != nil {
+		data["user_registration"] = *a.userRegistration
+	}
+	if a.userRegistrationRole != nil {
+		data["user_registration_role"] = *a.userRegistrationRole
+	}
+	return data
+}
+
+func (a *Authentication) getOidcConfig() (string, error) {
+	data := a.templateData()
 	for authType, typedAuthenticator := range a.authenticators {
 		providerData := make(map[string]string)
 		if authType == AuthenticatorTypeOIDC {
 			for _, authenticator := range typedAuthenticator {
-				cfg := authenticator.GetConfig()
-				for _, k := range cfg.Keys() {
-					v, _ := cfg.Get(k)
+				for k, v := range authenticator.GetConfig() {
 					providerData[k] = v
 				}
 			}
@@ -194,9 +178,6 @@ func (a *Authentication) getOidcConfig() (string, error) {
 		}
 	}
 	data["auth_type"] = "AUTH_OAUTH"
-	data["auth_roles_sync_at_login"] = a.syncRolesAt
-	data["user_registration"] = a.userRegistration
-	data["user_registration_role"] = a.userRegistrationRole
 
 	tpl := `
 AUTH_TYPE = '{{ .auth_type }}'
@@ -230,12 +211,11 @@ OAUTH_PROVIDERS = [
 				]
 `
 
-	t := config.TemplateParser{Template: tpl, Value: data}
-	return t.Parse()
+	return renderAuthTemplate(tpl, data)
 }
 
 func (a *Authentication) getLdapConfig() (string, error) {
-	data := make(map[string]interface{})
+	data := a.templateData()
 	exist := false
 	for authType, typedAuthenticator := range a.authenticators {
 		if authType == AuthenticatorTypeLDAP {
@@ -244,9 +224,7 @@ func (a *Authentication) getLdapConfig() (string, error) {
 				continue
 			}
 			for _, authenticator := range typedAuthenticator {
-				cfg := authenticator.GetConfig()
-				for _, k := range cfg.Keys() {
-					v, _ := cfg.Get(k)
+				for k, v := range authenticator.GetConfig() {
 					data[k] = v
 				}
 			}
@@ -254,9 +232,6 @@ func (a *Authentication) getLdapConfig() (string, error) {
 		}
 	}
 	data["auth_type"] = "AUTH_LDAP"
-	data["auth_roles_sync_at_login"] = a.syncRolesAt
-	data["user_registration"] = a.userRegistration
-	data["user_registration_role"] = a.userRegistrationRole
 
 	tpl := `
 AUTH_TYPE = '{{ .auth_type }}'
@@ -291,16 +266,18 @@ with open('{{ .auth_ldap_bind_password_file }}', 'r') as f:
 {{- end }}
 `
 
-	t := config.TemplateParser{Template: tpl, Value: data}
-	return t.Parse()
+	return renderAuthTemplate(tpl, data)
 }
 
+// GetConfig renders the FAB section appended to webserver_config.py. With no authenticators it
+// is AUTH_DB; otherwise the LDAP and OIDC blocks are rendered in that order (an empty block still
+// renders its skeleton, matching the pre-framework behavior the product's e2e was built on).
 func (a *Authentication) GetConfig() (string, error) {
 	if len(a.authenticators) == 0 {
 		return a.getAuthDBConfig(), nil
 	}
 
-	configs := make([]string, 0)
+	configs := make([]string, 0, 2)
 
 	ldapConfig, err := a.getLdapConfig()
 	if err != nil {
@@ -318,6 +295,18 @@ func (a *Authentication) GetConfig() (string, error) {
 	return strings.Join(configs, "\n"), nil
 }
 
+func renderAuthTemplate(tpl string, data map[string]interface{}) (string, error) {
+	t, err := template.New("auth").Parse(tpl)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
 type ldapAuthenticator struct {
 	provider *authv1alpha1.LDAPProvider
 }
@@ -326,56 +315,7 @@ func (a *ldapAuthenticator) GetEnvVars() []corev1.EnvVar {
 	return nil
 }
 
-func (a *ldapAuthenticator) GetVolumes() []corev1.Volume {
-	if a.provider.BindCredentials == nil {
-		return nil
-	}
-	secretClass := a.provider.BindCredentials.SecretClass
-
-	svcScope := make([]string, 0)
-	podScope := false
-	nodeScope := false
-	if a.provider.BindCredentials.Scope != nil {
-		if a.provider.BindCredentials.Scope.Pod {
-			podScope = true
-		}
-		if a.provider.BindCredentials.Scope.Node {
-			nodeScope = true
-		}
-		if a.provider.BindCredentials.Scope.Services != nil {
-			for _, s := range a.provider.BindCredentials.Scope.Services {
-				svcScope = append(svcScope, string(constants.ServiceScope)+"="+s)
-			}
-		}
-	}
-
-	b := builder.NewSecretOperatorVolume(a.getVolumeName(), secretClass)
-	b.SetScope(&builder.SecretVolumeScope{
-		Pod:     podScope,
-		Node:    nodeScope,
-		Service: svcScope,
-	})
-	return []corev1.Volume{*b.Builde()}
-}
-
-func (a *ldapAuthenticator) getVolumeName() string {
-	return fmt.Sprintf("ldap-%s", a.provider.BindCredentials.SecretClass)
-}
-
-func (a *ldapAuthenticator) GetVolumeMounts() []corev1.VolumeMount {
-	if a.provider.BindCredentials == nil {
-		return nil
-	}
-	return []corev1.VolumeMount{
-		{
-			Name:      a.getVolumeName(),
-			MountPath: path.Join(constants.KubedoopSecretDir, a.provider.BindCredentials.SecretClass),
-		},
-	}
-}
-
-func (a *ldapAuthenticator) GetConfig() *properties.Properties {
-
+func (a *ldapAuthenticator) GetConfig() map[string]string {
 	server := url.URL{Scheme: "ldap", Host: a.provider.Hostname}
 	if a.provider.Port != 0 {
 		server.Host += ":" + strconv.Itoa(a.provider.Port)
@@ -395,28 +335,24 @@ func (a *ldapAuthenticator) GetConfig() *properties.Properties {
 		ldapFieldGroup = a.provider.LDAPFieldNames.Group
 	}
 
-	cfg := properties.NewProperties()
-	cfg.Add("auth_ldap_server", server.String())
-	cfg.Add("auth_ldap_search", a.provider.SearchBase)
-	cfg.Add("auth_ldap_search_filter", a.provider.SearchFilter)
-	cfg.Add("auth_ldap_uid_field", ldapFieldUid)
-	cfg.Add("auth_ldap_group_field", ldapFieldGroup)
-	cfg.Add("auth_ldap_firstname_field", ldapFieldGivenName)
-	cfg.Add("auth_ldap_lastname_field", ldapFieldSurname)
-	cfg.Add("auth_ldap_email_field", ldapFieldEmail)
-
-	mountPath := path.Join(constants.KubedoopSecretDir, a.provider.BindCredentials.SecretClass)
+	cfg := map[string]string{
+		"auth_ldap_server":          server.String(),
+		"auth_ldap_search":          a.provider.SearchBase,
+		"auth_ldap_search_filter":   a.provider.SearchFilter,
+		"auth_ldap_uid_field":       ldapFieldUid,
+		"auth_ldap_group_field":     ldapFieldGroup,
+		"auth_ldap_firstname_field": ldapFieldGivenName,
+		"auth_ldap_lastname_field":  ldapFieldSurname,
+		"auth_ldap_email_field":     ldapFieldEmail,
+	}
 
 	if a.provider.BindCredentials != nil {
-		cfg.Add("auth_ldap_bind_user_file", path.Join(mountPath, "username"))
-		cfg.Add("auth_ldap_bind_password_file", path.Join(mountPath, "password"))
+		mountPath := path.Join(constant.KubedoopSecretDir, a.provider.BindCredentials.SecretClass)
+		cfg["auth_ldap_bind_user_file"] = path.Join(mountPath, "username")
+		cfg["auth_ldap_bind_password_file"] = path.Join(mountPath, "password")
 	}
 
 	return cfg
-}
-
-func (a *ldapAuthenticator) GetCommands() []string {
-	return nil
 }
 
 type oidcAuthenticator struct {
@@ -425,7 +361,7 @@ type oidcAuthenticator struct {
 }
 
 func (a *oidcAuthenticator) GetEnvVars() []corev1.EnvVar {
-	envVars := []corev1.EnvVar{
+	return []corev1.EnvVar{
 		{
 			Name: EnvKeyOidcClientId,
 			ValueFrom: &corev1.EnvVarSource{
@@ -449,19 +385,9 @@ func (a *oidcAuthenticator) GetEnvVars() []corev1.EnvVar {
 			},
 		},
 	}
-	return envVars
 }
 
-func (a *oidcAuthenticator) GetVolumes() []corev1.Volume {
-	return nil
-}
-
-func (a *oidcAuthenticator) GetVolumeMounts() []corev1.VolumeMount {
-	return nil
-}
-
-func (a *oidcAuthenticator) GetConfig() *properties.Properties {
-
+func (a *oidcAuthenticator) GetConfig() map[string]string {
 	scopes := a.provider.Scopes
 	scopes = append(scopes, a.config.ExtraScopes...)
 
@@ -477,17 +403,12 @@ func (a *oidcAuthenticator) GetConfig() *properties.Properties {
 
 	// TODO: Add Tls support
 
-	cfg := properties.NewProperties()
-	cfg.Add("client_id", fmt.Sprintf("os.environ.get('%s')", EnvKeyOidcClientId))
-	cfg.Add("client_secret", fmt.Sprintf("os.environ.get('%s')", EnvKeyOidcClientSecret))
-	cfg.Add("scopes", strings.Join(scopes, " "))
-	cfg.Add("api_base_url", fmt.Sprintf("%s/protocol/", issuer.String()))
-	cfg.Add("server_metadata_url", fmt.Sprintf("%s/.well-known/openid-configuration", issuer.String()))
-	cfg.Add("provider_hint", a.provider.ProviderHint)
-
-	return cfg
-}
-
-func (a *oidcAuthenticator) GetCommands() []string {
-	return nil
+	return map[string]string{
+		"client_id":           fmt.Sprintf("os.environ.get('%s')", EnvKeyOidcClientId),
+		"client_secret":       fmt.Sprintf("os.environ.get('%s')", EnvKeyOidcClientSecret),
+		"scopes":              strings.Join(scopes, " "),
+		"api_base_url":        fmt.Sprintf("%s/protocol/", issuer.String()),
+		"server_metadata_url": fmt.Sprintf("%s/.well-known/openid-configuration", issuer.String()),
+		"provider_hint":       a.provider.ProviderHint,
+	}
 }

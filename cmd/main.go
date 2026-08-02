@@ -39,6 +39,7 @@ import (
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 	"github.com/zncdatadev/airflow-operator/internal/controller"
 	"github.com/zncdatadev/airflow-operator/internal/util/version"
+	"github.com/zncdatadev/operator-go/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -187,11 +188,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.AirflowClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "AirflowCluster")
+	// Setup AirflowCluster controller using the operator-go GenericReconciler. No extensions are
+	// registered: Airflow publishes no discovery ConfigMap and needs no cluster-level hooks.
+	// No ServiceAccount is configured either — the pre-framework operator ran pods under the
+	// namespace's default ServiceAccount, and keeping that avoids a second pod-template change on
+	// upgrade.
+	airflowReconciler, err := reconciler.NewGenericReconciler(
+		&reconciler.GenericReconcilerConfig[*airflowv1alpha1.AirflowCluster]{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			// operator-go's Recorder field is the deprecated record.EventRecorder; the
+			// replacement GetEventRecorder returns the incompatible events.EventRecorder.
+			Recorder:         mgr.GetEventRecorderFor("airflow-cluster-controller"), //nolint:staticcheck
+			RoleGroupHandler: controller.NewAirflowRoleGroupHandler(mgr.GetScheme()),
+			ProductConfig:    controller.ComputeProductConfig,
+			Prototype:        &airflowv1alpha1.AirflowCluster{},
+			// Fail the reconcile with a Degraded condition when the user-provided credentials
+			// secret is absent, instead of letting every pod crash-loop on missing env.
+			Dependencies: func(cr *airflowv1alpha1.AirflowCluster) []reconciler.Dependency {
+				if cr.Spec.ClusterConfig == nil || cr.Spec.ClusterConfig.Credentials == "" {
+					return nil
+				}
+				return []reconciler.Dependency{
+					{Kind: reconciler.DependencySecret, Name: cr.Spec.ClusterConfig.Credentials},
+				}
+			},
+		})
+	if err != nil {
+		setupLog.Error(err, "unable to create GenericReconciler", "controller", "AirflowCluster")
+		os.Exit(1)
+	}
+	if err := airflowReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to setup controller", "controller", "AirflowCluster")
 		os.Exit(1)
 	}
 
