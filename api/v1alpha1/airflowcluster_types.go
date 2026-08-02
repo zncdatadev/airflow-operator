@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	authenticationv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/authentication/v1alpha1"
 	commonsv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/commons/v1alpha1"
-	"github.com/zncdatadev/operator-go/pkg/constants"
+	"github.com/zncdatadev/operator-go/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -140,7 +140,7 @@ type ClusterConfigSpec struct {
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=cluster-internal;external-unstable;external-stable
-	ListenerClass constants.ListenerClass `json:"listenerClass,omitempty"`
+	ListenerClass string `json:"listenerClass,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	VectorAggregatorConfigMapName string `json:"vectorAggregatorConfigMapName,omitempty"`
@@ -225,6 +225,7 @@ type AirflowClusterSpec struct {
 
 // AirflowClusterStatus defines the observed state of AirflowCluster.
 type AirflowClusterStatus struct {
+	commonsv1alpha1.GenericClusterStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -237,6 +238,100 @@ type AirflowCluster struct {
 
 	Spec   AirflowClusterSpec   `json:"spec,omitempty"`
 	Status AirflowClusterStatus `json:"status,omitempty"`
+}
+
+// ClusterInterface implementation.
+//
+// GetSpec bridges the typed role fields into the generic Roles map the framework iterates.
+// The role keys are the plural CR field names ("webservers", "schedulers", "celeryexecutors"),
+// which keeps the role-group resource naming <cluster>-<role>-<group> identical to the
+// pre-framework operator. "kubernetesexecutors" stays in the CRD but is not mapped: it was
+// never implemented by the controller.
+var _ common.ClusterInterface = &AirflowCluster{}
+
+func (a *AirflowCluster) GetSpec() *commonsv1alpha1.GenericClusterSpec {
+	return a.Spec.ToGenericSpec()
+}
+
+// GetStatus returns a pointer into the CR's embedded generic status; the framework writes
+// conditions and the role-group ledger through it, so product status fields would survive a
+// reconcile cycle alongside it.
+func (a *AirflowCluster) GetStatus() *commonsv1alpha1.GenericClusterStatus {
+	return &a.Status.GenericClusterStatus
+}
+
+// ToGenericSpec adapts AirflowClusterSpec to GenericClusterSpec.
+func (s *AirflowClusterSpec) ToGenericSpec() *commonsv1alpha1.GenericClusterSpec {
+	result := &commonsv1alpha1.GenericClusterSpec{
+		ClusterOperation: s.ClusterOperation,
+	}
+
+	if s.Image != nil {
+		result.Image = &commonsv1alpha1.ImageSpec{
+			Custom:          s.Image.Custom,
+			Repo:            s.Image.Repo,
+			ProductVersion:  s.Image.ProductVersion,
+			KubedoopVersion: s.Image.KubedoopVersion,
+		}
+	}
+
+	roles := make(map[string]commonsv1alpha1.RoleSpec)
+	if s.Webservers != nil {
+		roles[string(WebserversRoleName)] = adaptRoleSpec(s.Webservers.RoleConfig, s.Webservers.Config, s.Webservers.OverridesSpec, s.Webservers.RoleGroups)
+	}
+	if s.Schedulers != nil {
+		roles[string(SchedulersRoleName)] = adaptRoleSpec(s.Schedulers.RoleConfig, s.Schedulers.Config, s.Schedulers.OverridesSpec, s.Schedulers.RoleGroups)
+	}
+	if s.CeleryExecutors != nil {
+		roles[string(CeleryExecutorsRoleName)] = adaptRoleSpec(s.CeleryExecutors.RoleConfig, s.CeleryExecutors.Config, s.CeleryExecutors.OverridesSpec, s.CeleryExecutors.RoleGroups)
+	}
+	result.Roles = roles
+
+	return result
+}
+
+// adaptRoleSpec converts a product role spec into the generic RoleSpec, flattening the embedded
+// overrides the way the CRD surfaces them (directly on the role, not nested).
+func adaptRoleSpec(
+	roleConfig *commonsv1alpha1.RoleConfigSpec,
+	config *ConfigSpec,
+	overrides *commonsv1alpha1.OverridesSpec,
+	roleGroups map[string]RoleGroupSpec,
+) commonsv1alpha1.RoleSpec {
+	roleSpec := commonsv1alpha1.RoleSpec{
+		RoleConfig: roleConfig,
+	}
+
+	if config != nil && config.RoleGroupConfigSpec != nil {
+		roleSpec.Config = config.RoleGroupConfigSpec
+	}
+
+	if overrides != nil {
+		roleSpec.ConfigOverrides = overrides.ConfigOverrides
+		roleSpec.EnvOverrides = overrides.EnvOverrides
+		roleSpec.CliOverrides = overrides.CliOverrides
+		roleSpec.PodOverrides = overrides.PodOverrides
+	}
+
+	groups := make(map[string]commonsv1alpha1.RoleGroupSpec, len(roleGroups))
+	for name, rg := range roleGroups {
+		adapted := commonsv1alpha1.RoleGroupSpec{
+			Replicas: rg.Replicas,
+		}
+		if rg.Config != nil && rg.Config.RoleGroupConfigSpec != nil {
+			adapted.Config = rg.Config.RoleGroupConfigSpec
+		}
+		if rg.OverridesSpec != nil {
+			adapted.ConfigOverrides = rg.ConfigOverrides
+			adapted.EnvOverrides = rg.EnvOverrides
+			adapted.CliOverrides = rg.CliOverrides
+			adapted.PodOverrides = rg.PodOverrides
+		}
+		groups[name] = adapted
+	}
+	roleSpec.RoleGroups = groups
+
+	return roleSpec
 }
 
 // +kubebuilder:object:root=true
