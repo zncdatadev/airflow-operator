@@ -6,6 +6,8 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: airflowcluster
 spec:
+  image:
+    productVersion: ($values.product_version)
   clusterConfig:
     credentialsSecret: credentials
   webservers:
