@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	commonsv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/commons/v1alpha1"
-	"github.com/zncdatadev/operator-go/pkg/constant"
 )
 
 const DefaultLogLevel = "INFO"
@@ -50,45 +49,32 @@ WTF_CSRF_ENABLED = False
 	return indentTabs4Spaces(cfg), nil
 }
 
-// renderLogging renders log_config.py: Airflow's DEFAULT_LOGGING_CONFIG deep-copied and extended
-// with a JSON rotating file handler, at the levels the role group's logging config declares.
-func renderLogging(roleName string, rgConfig *commonsv1alpha1.RoleGroupConfigSpec) string {
+// renderLogging renders Airflow's product-owned log_config.py. A non-empty target enables the
+// rolling JSON appender. The role-group handler always supplies one to preserve Airflow's Gen 2
+// on-disk logging contract; Vector independently controls whether those files are collected.
+func renderLogging(logConfig *commonsv1alpha1.LoggingConfigSpec, logFileTarget string) string {
 	fileLogLevel := DefaultLogLevel
 	consoleLogLevel := DefaultLogLevel
-	logFile := path.Join(constant.KubedoopLogDir, roleName, "airflow.log.json")
-
 	rootLogLevel := DefaultLogLevel
 
-	if rgConfig != nil && rgConfig.Logging != nil {
-		logConfig, ok := rgConfig.Logging.Containers[roleName]
-		if ok {
-			if logConfig.File != nil {
-				fileLogLevel = logConfig.File.Level
-			}
-
-			if logConfig.Console != nil {
-				consoleLogLevel = logConfig.Console.Level
-			}
-
-			if rootLogger, ok := logConfig.Loggers["root"]; ok {
-				rootLogLevel = rootLogger.Level
-			}
-
+	if logConfig != nil {
+		if logConfig.File != nil && logConfig.File.Level != "" {
+			fileLogLevel = logConfig.File.Level
+		}
+		if logConfig.Console != nil && logConfig.Console.Level != "" {
+			consoleLogLevel = logConfig.Console.Level
+		}
+		if rootLogger, ok := logConfig.Loggers["root"]; ok && rootLogger != nil && rootLogger.Level != "" {
+			rootLogLevel = rootLogger.Level
 		}
 	}
 
-	logDir := path.Join(constant.KubedoopLogDir, roleName)
 	cfg := `
 import logging
-import os
 from copy import deepcopy
 from logging.config import dictConfig
 
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
-
-LOGDIR = '` + logDir + `'
-
-os.makedirs(LOGDIR, exist_ok=True)
 
 LOGGING_CONFIG = deepcopy(DEFAULT_LOGGING_CONFIG)
 
@@ -98,7 +84,19 @@ for logger_name, logger_config in LOGGING_CONFIG['loggers'].items():
 	# Do not change the setting of the airflow.task logger because
 	# otherwise DAGs cannot be loaded anymore.
 	if logger_name != 'airflow.task':
-		logger_config['propagate'] == True
+		logger_config['propagate'] = True
+
+LOGGING_CONFIG.setdefault('handlers', {})
+LOGGING_CONFIG['handlers'].setdefault('console', {})
+LOGGING_CONFIG['handlers']['console']['level'] = '` + consoleLogLevel + `'
+`
+
+	rootHandlers := "'console'"
+	if logFileTarget != "" {
+		cfg += `
+LOGDIR = '` + path.Dir(logFileTarget) + `'
+
+os.makedirs(LOGDIR, exist_ok=True)
 
 LOGGING_CONFIG.setdefault('formatters', {})
 LOGGING_CONFIG['formatters']['json'] = {
@@ -106,21 +104,25 @@ LOGGING_CONFIG['formatters']['json'] = {
 	'json_fields': ['asctime', 'levelname', 'message', 'name']
 }
 
-LOGGING_CONFIG.setdefault('handlers', {})
-LOGGING_CONFIG['handlers'].setdefault('console', {})
-LOGGING_CONFIG['handlers']['console']['level'] = '` + consoleLogLevel + `'
 LOGGING_CONFIG['handlers']['file'] = {
 	'class': 'logging.handlers.RotatingFileHandler',
 	'formatter': 'json',
 	'level': '` + fileLogLevel + `',
-	'filename': '` + logFile + `',
+	'filename': '` + logFileTarget + `',
 	'maxBytes': 10485760,
 	'backupCount': 5
 }
+`
+		// os is needed only on the file-appender path. Keeping the import conditional makes the
+		// console-only result accurately describe that it has no filesystem side effects.
+		cfg = strings.Replace(cfg, "import logging\n", "import logging\nimport os\n", 1)
+		rootHandlers = "'console', 'file'"
+	}
 
+	cfg += `
 LOGGING_CONFIG['root'] = {
 	'level': '` + rootLogLevel + `',
-	'handlers': ['console', 'file'],
+	'handlers': [` + rootHandlers + `],
 	'filters': ['mask_secrets']
 }
 `

@@ -39,6 +39,7 @@ import (
 	airflowv1alpha1 "github.com/zncdatadev/airflow-operator/api/v1alpha1"
 	"github.com/zncdatadev/airflow-operator/internal/controller"
 	"github.com/zncdatadev/airflow-operator/internal/util/version"
+	authv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/authentication/v1alpha1"
 	"github.com/zncdatadev/operator-go/pkg/reconciler"
 	// +kubebuilder:scaffold:imports
 )
@@ -52,6 +53,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(airflowv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(authv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -188,21 +190,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup AirflowCluster controller using the operator-go GenericReconciler. No extensions are
-	// registered: Airflow publishes no discovery ConfigMap and needs no cluster-level hooks.
-	// No ServiceAccount is configured either — the pre-framework operator ran pods under the
-	// namespace's default ServiceAccount, and keeping that avoids a second pod-template change on
-	// upgrade.
+	// Setup AirflowCluster controller using the operator-go GenericReconciler. The framework owns
+	// the workload ServiceAccount and all role-group lifecycle bookkeeping; Airflow's handler
+	// declares only product-specific role shape and resources.
+	airflowHandler := controller.NewAirflowRoleGroupHandler(mgr.GetScheme())
 	airflowReconciler, err := reconciler.NewGenericReconciler(
 		&reconciler.GenericReconcilerConfig[*airflowv1alpha1.AirflowCluster]{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
+			Client:    mgr.GetClient(),
+			APIReader: mgr.GetAPIReader(),
+			Scheme:    mgr.GetScheme(),
 			// operator-go's Recorder field is the deprecated record.EventRecorder; the
 			// replacement GetEventRecorder returns the incompatible events.EventRecorder.
 			Recorder:         mgr.GetEventRecorderFor("airflow-cluster-controller"), //nolint:staticcheck
-			RoleGroupHandler: controller.NewAirflowRoleGroupHandler(mgr.GetScheme()),
-			ProductConfig:    controller.ComputeProductConfig,
-			Prototype:        &airflowv1alpha1.AirflowCluster{},
+			RoleGroupHandler: airflowHandler,
+			RoleProvider:     airflowHandler,
+			RoleGroupResolver: reconciler.RoleGroupResolverFunc[*airflowv1alpha1.AirflowCluster](
+				controller.ComputeProductConfig,
+			),
+			ImageResolution: reconciler.ImageResolution{
+				ProductName: airflowv1alpha1.DefaultProductName,
+				Defaults:    controller.ImageDefaults(),
+			},
+			Prototype: &airflowv1alpha1.AirflowCluster{},
 			// Fail the reconcile with a Degraded condition when the user-provided credentials
 			// secret is absent, instead of letting every pod crash-loop on missing env.
 			Dependencies: func(cr *airflowv1alpha1.AirflowCluster) []reconciler.Dependency {

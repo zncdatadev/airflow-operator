@@ -5,11 +5,13 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/zncdatadev/airflow-operator)](https://goreportcard.com/report/github.com/zncdatadev/airflow-operator)
 [![Artifact HUB](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/airflow-operator)](https://artifacthub.io/packages/helm/kubedoop/airflow-operator)
 
-This is a Kubernetes operator to manage [Apache Airflow](https://airflow.apache.org/) ensembles.
+This is a Kubernetes operator to manage
+[Apache Airflow](https://airflow.apache.org/) ensembles.
 
-It's part of the Kubedoop Data Platform, a modular open source data platform built on Kubernetes that provides Kubernetes native deployment
-and management of popular open source data apps like Apache Kafka, Apache Doris, Trino or Apache Spark, all working
-together seamlessly. Based on Kubernetes, it runs everywhere – on prem or in the cloud.
+It's part of the Kubedoop Data Platform, a modular open source data platform
+built on Kubernetes that provides Kubernetes-native deployment and management
+of popular open source data apps like Apache Kafka, Apache Doris, Trino, or
+Apache Spark. It runs everywhere: on premises or in the cloud.
 
 ## Quick Start
 
@@ -34,6 +36,14 @@ helm install airflow-operator oci://quay.io/kubedoopcharts/airflow-operator
 ```bash
 kubectl apply -f config/samples
 ```
+
+## Upgrading to the operator-go v0.13 Implementation
+
+Helm 3 does not upgrade CRDs stored under a chart's `crds/` directory. Apply
+the new AirflowCluster CRD before upgrading the controller or Helm release.
+The [operator-go v0.13 migration guide](docs/operator-go-v0.13-migration.md)
+contains the executable preflight/apply commands, compatibility details, and
+in-place upgrade acceptance procedure.
 
 ## Kubedoop Data Platform Operators
 
@@ -61,9 +71,12 @@ And our internal operators: :
 
 ## Contributing
 
-If you'd like to contribute to Kubedoop, please refer to our [Contributing Guide](https://kubedoop.dev/docs/developer-manual/collaboration) for more information.
-We welcome contributions of all kinds, including but not limited to code, documentation, and use cases.
+If you'd like to contribute to Kubedoop, please refer to our
+[Contributing Guide](https://kubedoop.dev/docs/developer-manual/collaboration)
+for more information. We welcome contributions of all kinds, including code,
+documentation, and use cases.
 
 ## License
 
-Kubedoop is under the Apache 2.0 license. See the [LICENSE](./LICENSE) file for details.
+Kubedoop is under the Apache 2.0 license. See the [LICENSE](./LICENSE) file for
+details.

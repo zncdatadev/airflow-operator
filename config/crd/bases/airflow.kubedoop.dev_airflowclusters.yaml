@@ -546,9 +546,18 @@ spec:
                         replicas:
                           default: 1
                           format: int32
+                          minimum: 0
                           type: integer
                       type: object
+                    maxProperties: 256
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'each role group name must be a lowercase RFC 1123
+                        label (lowercase alphanumerics and ''-'', starting and ending
+                        with an alphanumeric, at most 63 characters): role group names
+                        become part of the name and labels of every resource built
+                        for the group'
+                      rule: self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))
                 type: object
               clusterConfig:
                 properties:
@@ -556,6 +565,7 @@ spec:
                     items:
                       properties:
                         authenticationClass:
+                          minLength: 1
                           type: string
                         oidc:
                           description: OidcSpec defines the OIDC spec.
@@ -586,7 +596,10 @@ spec:
                           type: boolean
                         userRegistrationRole:
                           type: string
+                      required:
+                      - authenticationClass
                       type: object
+                    maxItems: 1
                     type: array
                   credentialsSecret:
                     description: "airflow credentials secret name\nThe secret should
@@ -673,15 +686,17 @@ spec:
                   custom:
                     type: string
                   kubedoopVersion:
-                    default: 0.0.0-dev
                     type: string
                   productVersion:
-                    default: 2.10.5
                     type: string
                   pullPolicy:
                     default: IfNotPresent
                     description: PullPolicy describes a policy for if/when to pull
                       a container image
+                    enum:
+                    - Always
+                    - Never
+                    - IfNotPresent
                     type: string
                   pullSecretName:
                     type: string
@@ -1678,9 +1693,18 @@ spec:
                         replicas:
                           default: 1
                           format: int32
+                          minimum: 0
                           type: integer
                       type: object
+                    maxProperties: 256
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'each role group name must be a lowercase RFC 1123
+                        label (lowercase alphanumerics and ''-'', starting and ending
+                        with an alphanumeric, at most 63 characters): role group names
+                        become part of the name and labels of every resource built
+                        for the group'
+                      rule: self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))
                 type: object
               webservers:
                 properties:
@@ -2189,11 +2213,24 @@ spec:
                         replicas:
                           default: 1
                           format: int32
+                          minimum: 0
                           type: integer
                       type: object
+                    maxProperties: 256
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'each role group name must be a lowercase RFC 1123
+                        label (lowercase alphanumerics and ''-'', starting and ending
+                        with an alphanumeric, at most 63 characters): role group names
+                        become part of the name and labels of every resource built
+                        for the group'
+                      rule: self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))
                 type: object
             type: object
+            x-kubernetes-validations:
+            - message: spec.kubernetesExecutors is unsupported because this operator
+                only implements CeleryExecutor; remove the field
+              rule: '!has(self.kubernetesExecutors)'
           status:
             description: AirflowClusterStatus defines the observed state of AirflowCluster.
             properties:
