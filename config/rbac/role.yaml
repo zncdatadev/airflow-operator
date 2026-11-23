@@ -8,8 +8,6 @@ rules:
   - ""
   resources:
   - configmaps
-  - secrets
-  - serviceaccounts
   - services
   verbs:
   - create
@@ -20,16 +18,48 @@ rules:
   - update
   - watch
 - apiGroups:
-  - airflow.kubedoop.dev
+  - ""
   resources:
-  - airflowclusters
+  - events
   verbs:
   - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
   - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
   - get
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - airflow.kubedoop.dev
+  resources:
+  - airflowclusters
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - airflow.kubedoop.dev

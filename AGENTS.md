@@ -46,12 +46,12 @@ Manages Apache Airflow deployments on Kubernetes. Handles creation, configuratio
 ## Dependencies
 
 ### Internal
-- `../operator-go` — Shared operator framework (`github.com/zncdatadev/operator-go v0.12.6`)
+- `../operator-go` — Shared operator framework (`github.com/zncdatadev/operator-go v0.13.0`)
 
 ### External
-- `sigs.k8s.io/controller-runtime v0.22.4`
-- `k8s.io/client-go v0.35.0`
-- `k8s.io/api v0.35.0`
+- `sigs.k8s.io/controller-runtime v0.23.3`
+- `k8s.io/client-go v0.35.4`
+- `k8s.io/api v0.35.4`
 - Go 1.25+
 
 <!-- MANUAL: Any manually added notes below this line are preserved on regeneration -->

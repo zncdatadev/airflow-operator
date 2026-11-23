@@ -1,0 +1,28 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gen3-lifecycle
+spec:
+  steps:
+    - name: install dependencies and airflow
+      try:
+        - apply:
+            file: ../default/postgres.yaml
+        - apply:
+            file: ../default/redis.yaml
+        - assert:
+            file: ../default/postgres-assert.yaml
+        - apply:
+            file: ../default/credentials.yaml
+        - apply:
+            file: cluster.yaml
+    - name: exercise lifecycle role groups and role pdb
+      try:
+        - script:
+            timeout: 1200s
+            content: bash lifecycle.sh
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get airflowcluster,sts,pod,cm,svc,pdb,sa -o wide
+              kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp

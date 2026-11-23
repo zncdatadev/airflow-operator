@@ -1,0 +1,27 @@
+apiVersion: airflow.kubedoop.dev/v1alpha1
+kind: AirflowCluster
+metadata:
+  name: lifecycle
+spec:
+  image:
+    productVersion: ($values.product_version)
+  clusterConfig:
+    credentialsSecret: credentials
+  webservers:
+    roleConfig:
+      podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+    roleGroups:
+      primary:
+        replicas: 1
+      secondary:
+        replicas: 1
+  schedulers:
+    roleGroups:
+      default:
+        replicas: 1
+  celeryExecutors:
+    roleGroups:
+      default:
+        replicas: 1

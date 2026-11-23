@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	authenticationv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/authentication/v1alpha1"
 	commonsv1alpha1 "github.com/zncdatadev/operator-go/pkg/apis/commons/v1alpha1"
-	"github.com/zncdatadev/operator-go/pkg/constants"
+	"github.com/zncdatadev/operator-go/pkg/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +29,11 @@ const (
 	DefaultRepository     = "quay.io/zncdatadev"
 	DefaultProductVersion = "2.10.5"
 	DefaultProductName    = "airflow"
+
+	// legacyDefaultKubedoopVersion was persisted by the pre-Gen3 CRD even when the user omitted
+	// the field. Treating this sentinel as an explicit pin would prevent an existing cluster from
+	// following the co-released product image after the operator is upgraded.
+	legacyDefaultKubedoopVersion = "0.0.0-dev"
 )
 
 type RoleName string
@@ -49,15 +54,14 @@ type ImageSpec struct {
 	Repo string `json:"repo,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default="0.0.0-dev"
 	KubedoopVersion string `json:"kubedoopVersion,omitempty"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default="2.10.5"
 	ProductVersion string `json:"productVersion,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:=IfNotPresent
+	// +kubebuilder:validation:Enum=Always;Never;IfNotPresent
 	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
 
 	// +kubebuilder:validation:Optional
@@ -65,8 +69,9 @@ type ImageSpec struct {
 }
 
 type AuthenticationSpec struct {
-	// +kubebuilder:validation:Optional
-	AuthenticationClass string `json:"authenticationClass,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	AuthenticationClass string `json:"authenticationClass"`
 
 	// +kubebuilder:validation:Optional
 	Oidc *authenticationv1alpha1.OidcSpec `json:"oidc,omitempty"`
@@ -109,6 +114,7 @@ type DagsGitSyncSpec struct {
 
 type ClusterConfigSpec struct {
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MaxItems=1
 	Authentication []AuthenticationSpec `json:"authentication,omitempty"`
 
 	// airflow credentials secret name
@@ -140,7 +146,7 @@ type ClusterConfigSpec struct {
 
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=cluster-internal;external-unstable;external-stable
-	ListenerClass constants.ListenerClass `json:"listenerClass,omitempty"`
+	ListenerClass string `json:"listenerClass,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	VectorAggregatorConfigMapName string `json:"vectorAggregatorConfigMapName,omitempty"`
@@ -160,6 +166,7 @@ type ClusterConfigSpec struct {
 
 type RoleGroupSpec struct {
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:default=1
 	Replicas                       *int32      `json:"replicas"`
 	Config                         *ConfigSpec `json:"config,omitempty"`
@@ -171,6 +178,8 @@ type ConfigSpec struct {
 }
 
 type CeleryExecutorsSpec struct {
+	// +kubebuilder:validation:MaxProperties=256
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))`,message=`each role group name must be a lowercase RFC 1123 label (lowercase alphanumerics and '-', starting and ending with an alphanumeric, at most 63 characters): role group names become part of the name and labels of every resource built for the group`
 	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
 	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
 	Config                         *ConfigSpec                     `json:"config,omitempty"`
@@ -185,6 +194,8 @@ type KubernetesExecutorsSpec struct {
 }
 
 type SchedulersSpec struct {
+	// +kubebuilder:validation:MaxProperties=256
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))`,message=`each role group name must be a lowercase RFC 1123 label (lowercase alphanumerics and '-', starting and ending with an alphanumeric, at most 63 characters): role group names become part of the name and labels of every resource built for the group`
 	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
 	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
 	Config                         *ConfigSpec                     `json:"config,omitempty"`
@@ -192,6 +203,8 @@ type SchedulersSpec struct {
 }
 
 type WebserversSpec struct {
+	// +kubebuilder:validation:MaxProperties=256
+	// +kubebuilder:validation:XValidation:rule=`self.all(k, size(k) <= 63 && k.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))`,message=`each role group name must be a lowercase RFC 1123 label (lowercase alphanumerics and '-', starting and ending with an alphanumeric, at most 63 characters): role group names become part of the name and labels of every resource built for the group`
 	RoleGroups                     map[string]RoleGroupSpec        `json:"roleGroups,omitempty"`
 	RoleConfig                     *commonsv1alpha1.RoleConfigSpec `json:"roleConfig,omitempty"`
 	Config                         *ConfigSpec                     `json:"config,omitempty"`
@@ -199,6 +212,7 @@ type WebserversSpec struct {
 }
 
 // AirflowClusterSpec defines the desired state of AirflowCluster.
+// +kubebuilder:validation:XValidation:rule=`!has(self.kubernetesExecutors)`,message=`spec.kubernetesExecutors is unsupported because this operator only implements CeleryExecutor; remove the field`
 type AirflowClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	// +default:value={"repo": "quay.io/zncdatadev", "pullPolicy": "IfNotPresent"}
@@ -225,6 +239,7 @@ type AirflowClusterSpec struct {
 
 // AirflowClusterStatus defines the observed state of AirflowCluster.
 type AirflowClusterStatus struct {
+	commonsv1alpha1.GenericClusterStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -237,6 +252,116 @@ type AirflowCluster struct {
 
 	Spec   AirflowClusterSpec   `json:"spec,omitempty"`
 	Status AirflowClusterStatus `json:"status,omitempty"`
+}
+
+// ClusterInterface implementation.
+//
+// GetSpec bridges the typed role fields into the generic Roles map the framework iterates.
+// The role keys are the plural CR field names ("webservers", "schedulers", "celeryexecutors"),
+// which keeps the role-group resource naming <cluster>-<role>-<group> identical to the
+// pre-framework operator. "kubernetesexecutors" is deliberately not mapped: admission rejects
+// the historical field because it was never implemented by the controller.
+var _ common.ClusterInterface = &AirflowCluster{}
+
+func (a *AirflowCluster) GetSpec() *commonsv1alpha1.GenericClusterSpec {
+	return a.Spec.ToGenericSpec()
+}
+
+// GetStatus returns a pointer into the CR's embedded generic status; the framework writes
+// conditions and the role-group ledger through it, so product status fields would survive a
+// reconcile cycle alongside it.
+func (a *AirflowCluster) GetStatus() *commonsv1alpha1.GenericClusterStatus {
+	return &a.Status.GenericClusterStatus
+}
+
+// ToGenericSpec adapts AirflowClusterSpec to GenericClusterSpec.
+func (s *AirflowClusterSpec) ToGenericSpec() *commonsv1alpha1.GenericClusterSpec {
+	result := &commonsv1alpha1.GenericClusterSpec{
+		ClusterOperation: s.ClusterOperation,
+	}
+
+	if s.Image != nil {
+		kubedoopVersion := s.Image.KubedoopVersion
+		if kubedoopVersion == legacyDefaultKubedoopVersion {
+			kubedoopVersion = ""
+		}
+		result.Image = &commonsv1alpha1.ImageSpec{
+			Custom:          s.Image.Custom,
+			Repo:            s.Image.Repo,
+			ProductVersion:  s.Image.ProductVersion,
+			KubedoopVersion: kubedoopVersion,
+			PullPolicy:      s.Image.PullPolicy,
+			PullSecretName:  s.Image.PullSecretName,
+		}
+	}
+
+	roles := make(map[string]commonsv1alpha1.RoleSpec)
+	if s.Webservers != nil {
+		roles[string(WebserversRoleName)] = adaptRoleSpec(s.Webservers.RoleConfig, s.Webservers.Config, s.Webservers.OverridesSpec, s.Webservers.RoleGroups)
+	}
+	if s.Schedulers != nil {
+		roles[string(SchedulersRoleName)] = adaptRoleSpec(s.Schedulers.RoleConfig, s.Schedulers.Config, s.Schedulers.OverridesSpec, s.Schedulers.RoleGroups)
+	}
+	if s.CeleryExecutors != nil {
+		roles[string(CeleryExecutorsRoleName)] = adaptRoleSpec(s.CeleryExecutors.RoleConfig, s.CeleryExecutors.Config, s.CeleryExecutors.OverridesSpec, s.CeleryExecutors.RoleGroups)
+	}
+	result.Roles = roles
+
+	return result
+}
+
+// VectorAggregatorConfigMapName exposes the configured Vector aggregator discovery ConfigMap to
+// the generic reconciler. An empty value means no aggregator has been configured.
+func (a *AirflowCluster) VectorAggregatorConfigMapName() string {
+	if a == nil || a.Spec.ClusterConfig == nil {
+		return ""
+	}
+
+	return a.Spec.ClusterConfig.VectorAggregatorConfigMapName
+}
+
+// adaptRoleSpec converts a product role spec into the generic RoleSpec, flattening the embedded
+// overrides the way the CRD surfaces them (directly on the role, not nested).
+func adaptRoleSpec(
+	roleConfig *commonsv1alpha1.RoleConfigSpec,
+	config *ConfigSpec,
+	overrides *commonsv1alpha1.OverridesSpec,
+	roleGroups map[string]RoleGroupSpec,
+) commonsv1alpha1.RoleSpec {
+	roleSpec := commonsv1alpha1.RoleSpec{
+		RoleConfig: roleConfig,
+	}
+
+	if config != nil && config.RoleGroupConfigSpec != nil {
+		roleSpec.Config = config.RoleGroupConfigSpec
+	}
+
+	if overrides != nil {
+		roleSpec.ConfigOverrides = overrides.ConfigOverrides
+		roleSpec.EnvOverrides = overrides.EnvOverrides
+		roleSpec.CliOverrides = overrides.CliOverrides
+		roleSpec.PodOverrides = overrides.PodOverrides
+	}
+
+	groups := make(map[string]commonsv1alpha1.RoleGroupSpec, len(roleGroups))
+	for name, rg := range roleGroups {
+		adapted := commonsv1alpha1.RoleGroupSpec{
+			Replicas: rg.Replicas,
+		}
+		if rg.Config != nil && rg.Config.RoleGroupConfigSpec != nil {
+			adapted.Config = rg.Config.RoleGroupConfigSpec
+		}
+		if rg.OverridesSpec != nil {
+			adapted.ConfigOverrides = rg.ConfigOverrides
+			adapted.EnvOverrides = rg.EnvOverrides
+			adapted.CliOverrides = rg.CliOverrides
+			adapted.PodOverrides = rg.PodOverrides
+		}
+		groups[name] = adapted
+	}
+	roleSpec.RoleGroups = groups
+
+	return roleSpec
 }
 
 // +kubebuilder:object:root=true

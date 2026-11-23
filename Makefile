@@ -65,8 +65,12 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: test-framework-upgrade-comparator
+test-framework-upgrade-comparator: ## Run the self-contained framework-upgrade comparator tests.
+	python3 -m unittest discover -s hack -p 'test_compare_framework_upgrade.py'
+
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
+test: manifests generate fmt vet setup-envtest test-framework-upgrade-comparator ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -272,10 +276,27 @@ endef
 
 OCI_REGISTRY ?= oci://quay.io/kubedoopcharts
 HELM ?= helm
+HELM_CRD_MANIFEST ?= deploy/helm/$(PROJECT_NAME)/crds/crds.yaml
+AIRFLOW_CRD_NAME ?= airflowclusters.airflow.kubedoop.dev
 
 .PHONY: helm-crd-sync ## Sync CRDs to helm chart for the operator.
 helm-crd-sync: manifests kustomize ## Sync CRDs to helm chart for the operator
 	"$(KUSTOMIZE)" build config/crd > deploy/helm/$(PROJECT_NAME)/crds/crds.yaml
+
+.PHONY: helm-crd-upgrade-check
+helm-crd-upgrade-check: helm-crd-sync ## Validate the release CRD against the current API server without changing it.
+	@context="$$("$(KUBECTL)" config current-context 2>/dev/null || true)"; \
+		test -n "$$context" || { echo "kubectl has no current context." >&2; exit 1; }; \
+		echo "Validating $(AIRFLOW_CRD_NAME) against Kubernetes context '$$context'..."
+	"$(KUBECTL)" apply --dry-run=server --validate=strict -f "$(HELM_CRD_MANIFEST)"
+	@echo "CRD preflight passed. Apply it with 'make helm-crd-upgrade' before upgrading the Helm release."
+
+.PHONY: helm-crd-upgrade
+helm-crd-upgrade: helm-crd-upgrade-check ## Apply and establish the release CRD before upgrading the Helm controller.
+	"$(KUBECTL)" apply --validate=strict -f "$(HELM_CRD_MANIFEST)"
+	"$(KUBECTL)" wait --for=condition=Established --timeout=60s \
+		"customresourcedefinition/$(AIRFLOW_CRD_NAME)"
+	@echo "CRD upgraded. The Helm controller/chart upgrade may now proceed."
 
 .PHONY: chart ## Generate helm chart for the operator.
 chart: manifests kustomize ## Generate helm chart for the operator.
@@ -355,6 +376,49 @@ cleanup-chainsaw-e2e: ## Run the chainsaw cleanup
 			"$(HELM)" uninstall --namespace kubedoop-operators $$dep; \
 		done; \
 	fi
+
+# Keep this fixed so an upgrade result always refers to the same pre-framework implementation.
+UPGRADE_BASELINE_REF := 5408f17091e07cf52301adf19de0942a91ef11bd
+UPGRADE_BASELINE_DIR ?= $(abspath $(shell git rev-parse --git-common-dir)/../.worktree/upgrade-baseline)
+UPGRADE_BASELINE_IMAGE ?= airflow-operator:upgrade-baseline-$(shell git rev-parse --short=12 $(UPGRADE_BASELINE_REF))
+UPGRADE_FRAMEWORK_IMAGE ?= airflow-operator:upgrade-framework-$(shell git rev-parse --short=12 HEAD)
+UPGRADE_EVIDENCE_DIR ?= $(CURDIR)/target/upgrade-evidence
+UPGRADE_CLUSTER ?= airflow-framework-upgrade
+UPGRADE_KUBECONFIG ?= $(CURDIR)/.kubeconfig-framework-upgrade
+
+.PHONY: framework-upgrade-e2e
+framework-upgrade-e2e: kustomize test-framework-upgrade-comparator ## Verify an in-place pre-framework upgrade and rollback with Airflow, PostgreSQL, and Redis state.
+	@test -z "$$(git status --porcelain --untracked-files=all)" || { \
+		echo "Commit or stash all source changes before the long upgrade acceptance; evidence must bind to one clean commit." >&2; exit 1; \
+	}
+	$(MAKE) generate manifests helm-crd-sync
+	@test -z "$$(git status --porcelain --untracked-files=all)" || { \
+		echo "Generated files are stale; commit the generated delta before running upgrade acceptance." >&2; exit 1; \
+	}
+	$(MAKE) docker-build IMG="$(UPGRADE_FRAMEWORK_IMAGE)"
+	@git cat-file -e "$(UPGRADE_BASELINE_REF)^{commit}"
+	@clusters="$$($(KIND) get clusters)" || exit 1; \
+		if printf '%s\n' "$$clusters" | grep -Fxq "$(UPGRADE_CLUSTER)"; then \
+			echo "Use a fresh cluster name; inspect/delete the previous test cluster first." >&2; exit 1; \
+		fi
+	$(MAKE) setup-chainsaw-cluster CHAINSAW_CLUSTER="$(UPGRADE_CLUSTER)" CHAINSAW_KUBECONFIG="$(UPGRADE_KUBECONFIG)"
+	@if [ ! -d "$(UPGRADE_BASELINE_DIR)" ]; then \
+		git worktree add --detach "$(UPGRADE_BASELINE_DIR)" "$(UPGRADE_BASELINE_REF)"; \
+	fi
+	@test "$$(git -C "$(UPGRADE_BASELINE_DIR)" rev-parse HEAD)" = "$$(git rev-parse "$(UPGRADE_BASELINE_REF)")"
+	@test -z "$$(git -C "$(UPGRADE_BASELINE_DIR)" status --porcelain)"
+	$(MAKE) -C "$(UPGRADE_BASELINE_DIR)" docker-build IMG="$(UPGRADE_BASELINE_IMAGE)"
+	KUBECONFIG="$(abspath $(UPGRADE_KUBECONFIG))" CHAINSAW_CLUSTER="$(UPGRADE_CLUSTER)" \
+		UPGRADE_BASELINE_DIR="$(UPGRADE_BASELINE_DIR)" UPGRADE_BASELINE_IMAGE="$(UPGRADE_BASELINE_IMAGE)" \
+		UPGRADE_EVIDENCE_DIR="$(UPGRADE_EVIDENCE_DIR)" IMG="$(UPGRADE_FRAMEWORK_IMAGE)" \
+		PRODUCT_VERSION="$(PRODUCT_VERSION)" KIND="$(KIND)" CONTAINER_TOOL="$(CONTAINER_TOOL)" \
+		UPGRADE_FRESH_CLUSTER=1 \
+		bash hack/test-framework-upgrade.sh
+
+.PHONY: cleanup-framework-upgrade-e2e
+cleanup-framework-upgrade-e2e: ## Tear down the dedicated framework upgrade cluster.
+	$(KIND) delete cluster --name "$(UPGRADE_CLUSTER)"
+	rm -f "$(UPGRADE_KUBECONFIG)"
 
 .PHONY: cleanup-chainsaw-cluster
 cleanup-chainsaw-cluster: ## Tear down the Kind cluster used for chainsaw e2e tests
